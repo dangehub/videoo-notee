@@ -210,6 +210,11 @@ function bindEditorEvents(shadow, wrapper) {
 
     // 工具栏按钮
     toolBtns.forEach(btn => {
+        // 防止点击按钮导致编辑器失去焦点（从而丢失光标位置）
+        btn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+        });
+
         btn.addEventListener('click', () => {
             const action = btn.dataset.action;
             handleToolAction(action);
@@ -413,20 +418,63 @@ export async function insertScreenshot(dataUrl, timestamp, videoUrl) {
     // 生成正确的时间戳链接
     const timestampUrl = generateTimestampUrl(videoUrl, timestamp);
 
-    // 在编辑器中插入图片和时间戳（使用相对路径）
-    // 注意：HTML 字符串不能包含换行和缩进，否则会被 htmlToMarkdown 解析为多余的空白文本节点
+    // 在编辑器中插入图片和时间戳
     const imgHtml = `<div class="vn-screenshot-block" data-path="${savedPath}"><img src="${dataUrl}" alt="截图 ${timeStr}" class="vn-screenshot-img" data-saved-path="${savedPath}"><a href="${timestampUrl}" class="vn-timestamp-link">${timeStr}</a></div>`;
 
-    // 插入到编辑器末尾
-    const liveEditor = editorInstance.liveEditor;
-    liveEditor.insertAdjacentHTML('beforeend', imgHtml);
-    liveEditor.scrollTop = liveEditor.scrollHeight;
+    insertHtmlAtCursor(imgHtml);
 
     // 更新截图缩略图栏
     updateScreenshotsList();
 
     // 自动保存
     autoSave();
+}
+
+/**
+ * 在光标处插入 HTML
+ */
+function insertHtmlAtCursor(html) {
+    if (!editorInstance || !editorInstance.liveEditor) return;
+
+    const sel = editorInstance.shadow.getSelection();
+    let inserted = false;
+
+    if (sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+
+        // 检查选区是否在编辑器内
+        if (editorInstance.liveEditor.contains(range.commonAncestorContainer)) {
+            range.deleteContents();
+
+            // 创建文档片段
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            const frag = document.createDocumentFragment();
+            let lastNode;
+            while (div.firstChild) {
+                lastNode = div.firstChild;
+                frag.appendChild(lastNode);
+            }
+
+            range.insertNode(frag);
+
+            // 移动光标到插入内容之后
+            if (lastNode) {
+                range.setStartAfter(lastNode);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+
+            inserted = true;
+        }
+    }
+
+    // 如果未能在光标处插入（例如失去焦点），则追加到末尾
+    if (!inserted) {
+        editorInstance.liveEditor.insertAdjacentHTML('beforeend', html);
+        editorInstance.liveEditor.scrollTop = editorInstance.liveEditor.scrollHeight;
+    }
 }
 
 /**
