@@ -370,17 +370,12 @@ export async function insertScreenshot(dataUrl, timestamp, videoUrl) {
     const timestampUrl = generateTimestampUrl(videoUrl, timestamp);
 
     // 在编辑器中插入图片和时间戳（使用相对路径）
-    const liveEditor = editorInstance.liveEditor;
-
-    const imgHtml = `
-        <div class="vn-screenshot-block" data-path="${savedPath}">
-            <img src="${dataUrl}" alt="截图 ${timeStr}" class="vn-screenshot-img" data-saved-path="${savedPath}">
-            <a href="${timestampUrl}" class="vn-timestamp-link">${timeStr}</a>
-        </div>
-    `;
+    // 注意：HTML 字符串不能包含换行和缩进，否则会被 htmlToMarkdown 解析为多余的空白文本节点
+    const imgHtml = `<div class="vn-screenshot-block" data-path="${savedPath}"><img src="${dataUrl}" alt="截图 ${timeStr}" class="vn-screenshot-img" data-saved-path="${savedPath}"><a href="${timestampUrl}" class="vn-timestamp-link">${timeStr}</a></div>`;
 
     // 插入到编辑器末尾
-    liveEditor.innerHTML += imgHtml;
+    const liveEditor = editorInstance.liveEditor;
+    liveEditor.insertAdjacentHTML('beforeend', imgHtml);
     liveEditor.scrollTop = liveEditor.scrollHeight;
 
     // 更新截图缩略图栏
