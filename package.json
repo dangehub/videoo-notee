@@ -1,0 +1,18 @@
+{
+  "name": "videoo-notee",
+  "version": "0.1.0",
+  "description": "视频笔记浏览器扩展 - 支持截图、时间戳、字幕提取和 AI 总结",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/build.js --watch",
+    "build": "node scripts/build.js",
+    "build:chrome": "node scripts/build.js --target=chrome",
+    "build:firefox": "node scripts/build.js --target=firefox"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  },
+  "dependencies": {
+    "markerjs2": "^2.29.0"
+  }
+}

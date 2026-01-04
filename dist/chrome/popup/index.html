@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Videoo Notee</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <h1>📝 Videoo Notee</h1>
+    </header>
+    
+    <main class="popup-main">
+      <div class="action-buttons">
+        <button id="btn-open-editor" class="btn btn-primary">
+          <span class="icon">📖</span>
+          打开编辑器
+        </button>
+        <button id="btn-open-player" class="btn btn-secondary">
+          <span class="icon">🎬</span>
+          本地播放器
+        </button>
+      </div>
+      
+      <div class="quick-actions">
+        <button id="btn-screenshot" class="quick-btn" title="截取当前视频帧">
+          📸 截图
+        </button>
+        <button id="btn-sidebar" class="quick-btn" title="打开侧边栏">
+          📋 侧边栏
+        </button>
+      </div>
+      
+      <div class="recent-notes" id="recent-notes">
+        <h3>最近笔记</h3>
+        <div class="notes-list" id="notes-list">
+          <p class="empty-tip">暂无笔记</p>
+        </div>
+      </div>
+    </main>
+    
+    <footer class="popup-footer">
+      <button id="btn-settings" class="link-btn">⚙️ 设置</button>
+    </footer>
+  </div>
+  
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

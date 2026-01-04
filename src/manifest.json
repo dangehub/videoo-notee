@@ -1,0 +1,69 @@
+{
+    "manifest_version": 3,
+    "name": "Videoo Notee",
+    "version": "0.1.0",
+    "description": "视频笔记扩展 - 截图、时间戳、字幕提取、AI 总结",
+    "author": "曲淡歌",
+    "icons": {
+        "16": "icons/icon16.svg",
+        "48": "icons/icon48.svg",
+        "128": "icons/icon128.svg"
+    },
+    "permissions": [
+        "activeTab",
+        "storage",
+        "downloads",
+        "scripting",
+        "sidePanel"
+    ],
+    "host_permissions": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*",
+        "https://www.bilibili.com/*",
+        "https://bilibili.com/*"
+    ],
+    "background": {
+        "service_worker": "background/index.js",
+        "type": "module"
+    },
+    "action": {
+        "default_popup": "popup/index.html",
+        "default_icon": {
+            "16": "icons/icon16.svg",
+            "48": "icons/icon48.svg"
+        },
+        "default_title": "Videoo Notee"
+    },
+    "side_panel": {
+        "default_path": "editor/index.html"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://www.youtube.com/*",
+                "https://youtube.com/*",
+                "https://www.bilibili.com/*",
+                "https://bilibili.com/*"
+            ],
+            "js": [
+                "content/index.js"
+            ],
+            "css": [
+                "styles/content.css"
+            ],
+            "run_at": "document_idle"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "player/*",
+                "editor/*",
+                "icons/*"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}

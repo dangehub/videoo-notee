@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Videoo Notee - 本地播放器</title>
+    <link rel="stylesheet" href="player.css">
+</head>
+
+<body>
+    <div class="player-container">
+        <!-- 视频区域 -->
+        <div class="video-section">
+            <div class="video-wrapper" id="video-wrapper">
+                <video id="video-player" controls>
+                    您的浏览器不支持视频播放
+                </video>
+                <div class="drop-overlay" id="drop-overlay">
+                    <div class="drop-content">
+                        <div class="drop-icon">🎬</div>
+                        <div class="drop-text">拖拽视频文件到这里</div>
+                        <div class="drop-subtext">或点击选择文件</div>
+                        <input type="file" id="file-input" accept="video/*" hidden>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 控制栏 -->
+            <div class="player-controls">
+                <button id="btn-open-file" class="control-btn">📁 打开视频</button>
+                <button id="btn-load-subtitle" class="control-btn">💬 加载字幕</button>
+                <input type="file" id="subtitle-input" accept=".srt,.vtt" hidden>
+                <div class="spacer"></div>
+                <button id="btn-screenshot" class="control-btn primary">📸 截图</button>
+                <button id="btn-add-note" class="control-btn primary">📝 添加笔记</button>
+            </div>
+        </div>
+
+        <!-- 笔记区域 -->
+        <div class="note-section">
+            <div class="note-header">
+                <h2>📝 笔记</h2>
+                <button id="btn-export-note" class="small-btn">导出 MD</button>
+            </div>
+
+            <div class="note-input-area">
+                <textarea id="note-input" placeholder="在这里写笔记..."></textarea>
+            </div>
+
+            <div class="note-entries" id="note-entries">
+                <!-- 笔记条目将在这里渲染 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 字幕显示 -->
+    <div class="subtitle-display hidden" id="subtitle-display"></div>
+
+    <script type="module" src="player.js"></script>
+</body>
+
+</html>
