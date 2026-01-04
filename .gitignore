@@ -1,5 +1,45 @@
-#参考文件
+# Dependencies
+node_modules/
 
-参考
+# Production build
+dist/
+build/
 
-docs/开发笔记.md
+# Reference materials
+参考/
+
+
+
+# System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs
+*.njsproj
+*.sln
+*.swp
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage/
+
+# Misc
+.gemini/
+gemini_brain/
