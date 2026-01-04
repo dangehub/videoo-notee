@@ -260,6 +260,21 @@ function bindEditorEvents(shadow, wrapper) {
             e.stopPropagation();
         });
     }
+
+    // 监听窗口消息（用于接收时间戳）
+    window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+        const { type, data } = event.data;
+        if (type === 'VN_TIMESTAMP_RESULT') {
+            const timeStr = formatTimestamp(data.timestamp);
+            const timestampUrl = generateTimestampUrl(data.videoUrl, data.timestamp);
+            // 插入时间戳链接，后面加个空格方便继续输入
+            const linkHtml = `<a href="${timestampUrl}" class="vn-timestamp-link">${timeStr}</a>&nbsp;`;
+            insertHtmlAtCursor(linkHtml);
+            // 自动保存
+            autoSave();
+        }
+    });
 }
 
 /**
