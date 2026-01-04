@@ -373,6 +373,47 @@ export async function getAssetsFolder() {
     return config.assetsFolder || DEFAULT_CONFIG.assetsFolder;
 }
 
+/**
+ * 获取保存的目录句柄信息
+ * @returns {Promise<{name: string, handle: FileSystemDirectoryHandle}|null>}
+ */
+export async function getSavedHandleInfo() {
+    const handle = await getSavedDirectoryHandle();
+    if (handle) {
+        return {
+            name: handle.name,
+            handle: handle
+        };
+    }
+    return null;
+}
+
+/**
+ * 验证并请求权限
+ * @param {FileSystemDirectoryHandle} handle
+ * @returns {Promise<boolean>} 是否获得权限
+ */
+export async function verifyPermission(handle) {
+    if (!handle) return false;
+
+    // 检查是否有读写权限
+    const options = { mode: 'readwrite' };
+    if ((await handle.queryPermission(options)) === 'granted') {
+        rootDirHandle = handle;
+        await ensureAssetsFolder();
+        return true;
+    }
+
+    // 请求权限
+    if ((await handle.requestPermission(options)) === 'granted') {
+        rootDirHandle = handle;
+        await ensureAssetsFolder();
+        return true;
+    }
+
+    return false;
+}
+
 export default {
     initFileSystem,
     requestDirectoryAccess,
@@ -385,5 +426,7 @@ export default {
     hasDirectoryAccess,
     getDirectoryName,
     setConfig,
-    getAssetsFolder
+    getAssetsFolder,
+    getSavedHandleInfo,
+    verifyPermission
 };

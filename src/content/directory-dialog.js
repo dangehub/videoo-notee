@@ -3,7 +3,7 @@
  * 首次使用时提示用户选择笔记保存目录
  */
 
-import { requestDirectoryAccess, hasDirectoryAccess, getDirectoryName, setConfig, getAssetsFolder } from '../lib/local-storage.js';
+import { requestDirectoryAccess, hasDirectoryAccess, getDirectoryName, setConfig, getAssetsFolder, getSavedHandleInfo, verifyPermission } from '../lib/local-storage.js';
 
 let dialogContainer = null;
 
@@ -69,6 +69,23 @@ export function showDirectoryDialog(onComplete) {
     const btnConfirm = shadow.getElementById('btn-confirm');
 
     let folderSelected = false;
+    let savedHandle = null;
+
+    // 检查是否有保存的目录
+    (async () => {
+        const saved = await getSavedHandleInfo();
+        if (saved) {
+            savedHandle = saved.handle;
+            folderPath.textContent = `恢复: ${saved.name}`;
+            folderPath.classList.add('saved-hint');
+            btnConfirm.textContent = '恢复访问权限';
+            btnConfirm.disabled = false;
+
+            // 提示用户
+            const desc = shadow.querySelector('.vn-dialog-desc');
+            desc.innerHTML = `检测到上次使用的目录: <strong>${saved.name}</strong><br>点击下方按钮恢复访问权限，或点击文件夹图标选择新目录。`;
+        }
+    })();
 
     // 选择文件夹
     const selectFolder = async () => {
@@ -99,7 +116,23 @@ export function showDirectoryDialog(onComplete) {
 
     // 确认
     btnConfirm.addEventListener('click', async () => {
-        if (!folderSelected) return;
+        // 如果是恢复模式
+        if (savedHandle && !folderSelected) {
+            try {
+                const success = await verifyPermission(savedHandle);
+                if (success) {
+                    dialogContainer.remove();
+                    dialogContainer = null;
+                    if (onComplete) onComplete(true);
+                    return;
+                }
+            } catch (error) {
+                console.error('恢复权限失败:', error);
+                folderPath.textContent = '恢复失败，请重新选择';
+            }
+        }
+
+        if (!folderSelected && !savedHandle) return;
 
         // 保存 assets 文件夹配置
         const assetsFolder = assetsInput.value.trim() || 'assets';
