@@ -7,11 +7,14 @@ import {
     initFileSystem,
     saveNote as saveNoteToLocal,
     saveScreenshot as saveScreenshotToLocal,
+    readNote,
+    readResource,
     hasDirectoryAccess,
     getDirectoryName,
     getAssetsFolder
 } from '../lib/local-storage.js';
 import { checkAndShowDirectoryDialog } from './directory-dialog.js';
+import { showFileListDialog } from './file-list-dialog.js';
 
 // 编辑器状态
 let editorInstance = null;
@@ -86,6 +89,7 @@ export async function createFloatingEditor() {
             <div class="vn-toolbar">
                 <button class="vn-tool-btn" data-action="screenshot" title="截图 (Ctrl+Shift+S)">📸</button>
                 <button class="vn-tool-btn" data-action="timestamp" title="时间戳 (Ctrl+Shift+T)">⏱️</button>
+                <button class="vn-tool-btn" data-action="open" title="打开笔记">📜</button>
                 <button class="vn-tool-btn" data-action="save" title="保存">💾</button>
                 <div class="vn-toolbar-spacer"></div>
                 <button class="vn-tool-btn" data-action="folder" title="更换保存目录">📂</button>
@@ -305,6 +309,46 @@ async function handleToolAction(action) {
             break;
         case 'timestamp':
             insertTimestamp();
+            break;
+        case 'open':
+            showFileListDialog(async (note) => {
+                try {
+                    const content = await readNote(note.name);
+                    if (editorInstance && editorInstance.liveEditor) {
+                        currentNoteTitle = note.title;
+                        const titleInput = editorInstance.shadow.querySelector('.vn-note-title');
+                        if (titleInput) titleInput.value = currentNoteTitle;
+
+                        editorInstance.liveEditor.innerHTML = markdownToHtml(content);
+                        console.log('[Videoo Notee] 已打开笔记:', note.name);
+
+                        // 异步解析图片并替换为 Blob URL
+                        // 1. 查找所有图片（包括截图块中的和普通的 img 标签）
+                        const images = editorInstance.liveEditor.querySelectorAll('img');
+                        for (const img of images) {
+                            const src = img.getAttribute('data-saved-path') || img.getAttribute('src');
+                            // 检查是否是本地路径（不包含 http/https/blob）
+                            if (src && !src.match(/^(http|https|blob|data):/)) {
+                                try {
+                                    const blob = await readResource(src);
+                                    if (blob) {
+                                        const url = URL.createObjectURL(blob);
+                                        img.src = url;
+                                        // 保持 data-saved-path 不变，以便后续保存时还原
+                                        if (!img.getAttribute('data-saved-path')) {
+                                            img.setAttribute('data-saved-path', src);
+                                        }
+                                    }
+                                } catch (err) {
+                                    console.warn('无法加载图片资源:', src);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('[Videoo Notee] 打开笔记失败:', e);
+                }
+            });
             break;
         case 'save':
             await saveNoteToFile();
@@ -629,6 +673,59 @@ function htmlToMarkdown(element) {
     return markdown
         .replace(/\n{3,}/g, '\n\n')
         .trim();
+}
+
+/**
+ * Markdown 转 HTML (用于加载笔记)
+ */
+function markdownToHtml(markdown) {
+    if (!markdown) return '';
+
+    let html = markdown;
+
+    // 保护代码块
+    const codeBlocks = [];
+    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+        codeBlocks.push(code);
+        return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+    });
+
+    // 恢复截图块 HTML
+    const screenshotRegex = /!\[(.*?)\]\((.*?)\)\s*(?:\[(.*?)\]\((.*?)\))?/g;
+    html = html.replace(screenshotRegex, (match, alt, src, timeText, timeHref) => {
+        const isScreenshot = alt.includes('截图') || src.includes('assets/');
+        if (isScreenshot) {
+            let linkHtml = '';
+            if (timeText && timeHref) {
+                linkHtml = `<a href="${timeHref}" class="vn-timestamp-link">${timeText}</a>`;
+            }
+            return `<div class="vn-screenshot-block" data-path="${src}"><img src="${src}" alt="${alt}" class="vn-screenshot-img" data-saved-path="${src}">${linkHtml}</div>`;
+        }
+        return `<img src="${src}" alt="${alt}">`;
+    });
+
+    // 普通链接
+    html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
+
+    // 标题
+    html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+
+    // 样式
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/^\- (.*$)/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/g, '<ul>$1</ul>');
+
+    // 换行
+    html = html.replace(/\n\n/g, '<br><br>');
+    html = html.replace(/\n/g, '<br>');
+
+    // 恢复代码块
+    html = html.replace(/__CODE_BLOCK_(\d+)__/g, (m, i) => `<pre><code>${codeBlocks[i]}</code></pre>`);
+
+    return html;
 }
 
 /**

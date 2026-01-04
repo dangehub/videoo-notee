@@ -166,12 +166,16 @@ export async function listNotes() {
     try {
         for await (const entry of rootDirHandle.values()) {
             if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+                const file = await entry.getFile();
                 notes.push({
                     name: entry.name,
-                    title: entry.name.replace('.md', '')
+                    title: entry.name.replace('.md', ''),
+                    lastModified: file.lastModified
                 });
             }
         }
+        // 按修改时间倒序排序
+        notes.sort((a, b) => b.lastModified - a.lastModified);
     } catch (error) {
         console.error('[Videoo Notee] 列出笔记失败:', error);
     }
@@ -196,6 +200,34 @@ export async function readNote(filename) {
     } catch (error) {
         console.error('[Videoo Notee] 读取笔记失败:', error);
         throw error;
+    }
+}
+
+/**
+ * 读取资源文件（图片等）
+ * @param {string} path - 相对路径 (e.g., "assets/screenshot.jpg")
+ * @returns {Promise<Blob>} 文件 Blob 对象
+ */
+export async function readResource(path) {
+    if (!rootDirHandle) throw new Error('未选择目录');
+
+    try {
+        // 简单处理路径分隔符
+        const parts = path.split('/');
+        let currentHandle = rootDirHandle;
+
+        // 遍历目录
+        for (let i = 0; i < parts.length - 1; i++) {
+            currentHandle = await currentHandle.getDirectoryHandle(parts[i]);
+        }
+
+        // 获取文件
+        const filename = parts[parts.length - 1];
+        const fileHandle = await currentHandle.getFileHandle(filename);
+        return await fileHandle.getFile();
+    } catch (error) {
+        console.error('[Videoo Notee] 读取资源失败:', path, error);
+        return null;
     }
 }
 
@@ -348,6 +380,7 @@ export default {
     saveScreenshot,
     listNotes,
     readNote,
+    readResource,
     deleteNote,
     hasDirectoryAccess,
     getDirectoryName,
