@@ -621,6 +621,15 @@ function htmlToMarkdown(element) {
 
     markdown = processNode(element);
 
+    // 规范化字符：
+    // 1. 全角 ＃ -> 半角 #
+    // 2. 全角空格 -> 半角空格
+    // 3. 不换行空格 (\u00A0 / &nbsp;) -> 普通空格 (修复 contenteditable 导致的 Markdown 标题失效问题)
+    markdown = markdown
+        .replace(/＃/g, '#')
+        .replace(/　/g, ' ')
+        .replace(/\u00A0/g, ' ');
+
     // 清理多余的空行
     return markdown
         .replace(/\n{3,}/g, '\n\n')
