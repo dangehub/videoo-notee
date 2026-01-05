@@ -13,6 +13,9 @@
     "esbuild": "^0.20.0"
   },
   "dependencies": {
-    "markerjs2": "^2.29.0"
+    "dayjs": "^1.11.19",
+    "lz-string": "^1.5.0",
+    "markerjs2": "^2.29.0",
+    "webextension-polyfill": "^0.12.0"
   }
 }

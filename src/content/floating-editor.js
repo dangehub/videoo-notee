@@ -15,6 +15,7 @@ import {
 } from '../lib/local-storage.js';
 import { checkAndShowDirectoryDialog } from './directory-dialog.js';
 import { showFileListDialog } from './file-list-dialog.js';
+import { generateFrontmatter } from '../utils/clipper-bridge.js';
 
 // 编辑器状态
 let editorInstance = null;
@@ -127,6 +128,7 @@ export async function createFloatingEditor() {
     // 添加到页面
     document.body.appendChild(container);
 
+    // 注册到实例
     editorInstance = {
         container,
         shadow,
@@ -136,6 +138,12 @@ export async function createFloatingEditor() {
         screenshots: [],
         content: ''
     };
+
+    // 为新笔记生成 Frontmatter
+    if (!editorInstance.liveEditor.innerHTML.trim()) {
+        const frontmatter = generateFrontmatter();
+        editorInstance.liveEditor.innerHTML = markdownToHtml(frontmatter);
+    }
 
     isVisible = true;
     return editorInstance;
