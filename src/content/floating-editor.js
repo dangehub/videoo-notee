@@ -15,7 +15,7 @@ import {
 } from '../lib/local-storage.js';
 import { checkAndShowDirectoryDialog } from './directory-dialog.js';
 import { showFileListDialog } from './file-list-dialog.js';
-import { generateFrontmatter } from '../utils/clipper-bridge.js';
+import { extractPropertiesAsArray, propertiesToFrontmatter } from '../utils/clipper-bridge.js';
 
 // 编辑器状态
 let editorInstance = null;
@@ -96,7 +96,21 @@ export async function createFloatingEditor() {
                 <button class="vn-tool-btn" data-action="folder" title="更换保存目录">📂</button>
             </div>
             <div class="vn-note-content">
-                <div class="vn-live-editor" contenteditable="true" placeholder="在这里写笔记..."></div>
+                <!-- 属性区（可折叠） -->
+                <div class="vn-properties-section">
+                    <div class="vn-properties-header">
+                        <span class="vn-properties-toggle">▼</span>
+                        <span class="vn-properties-title">属性</span>
+                    </div>
+                    <div class="vn-properties-body">
+                        <div class="vn-properties-list"></div>
+                        <button class="vn-add-property-btn">+ 添加属性</button>
+                    </div>
+                </div>
+                <!-- 正文区 -->
+                <div class="vn-body-section">
+                    <div class="vn-live-editor" contenteditable="true" placeholder="在这里写笔记..."></div>
+                </div>
             </div>
             <div class="vn-screenshots-bar">
                 <div class="vn-screenshots-list"></div>
@@ -134,19 +148,129 @@ export async function createFloatingEditor() {
         shadow,
         wrapper: editorWrapper,
         liveEditor: shadow.querySelector('.vn-live-editor'),
+        propertiesSection: shadow.querySelector('.vn-properties-section'),
+        propertiesBody: shadow.querySelector('.vn-properties-body'),
+        propertiesList: shadow.querySelector('.vn-properties-list'),
         screenshotsList: shadow.querySelector('.vn-screenshots-list'),
         screenshots: [],
+        properties: [],
         content: ''
     };
 
-    // 为新笔记生成 Frontmatter
-    if (!editorInstance.liveEditor.innerHTML.trim()) {
-        const frontmatter = generateFrontmatter();
-        editorInstance.liveEditor.innerHTML = markdownToHtml(frontmatter);
-    }
+    // 初始化属性区（从 Frontmatter 提取属性）
+    initPropertiesSection(shadow);
+
+    // 默认光标聚焦到正文区
+    setTimeout(() => {
+        editorInstance.liveEditor.focus();
+    }, 100);
 
     isVisible = true;
     return editorInstance;
+}
+
+/**
+ * 初始化属性区（双栏键值编辑器）
+ */
+async function initPropertiesSection(shadow) {
+    const propertiesSection = shadow.querySelector('.vn-properties-section');
+    const propertiesHeader = shadow.querySelector('.vn-properties-header');
+    const propertiesBody = shadow.querySelector('.vn-properties-body');
+    const propertiesList = shadow.querySelector('.vn-properties-list');
+    const addPropertyBtn = shadow.querySelector('.vn-add-property-btn');
+
+    // 从 storage 获取折叠状态
+    let isCollapsed = false;
+    try {
+        const stored = await chrome.storage.local.get('propertiesCollapsed');
+        isCollapsed = stored.propertiesCollapsed || false;
+    } catch (e) {
+        // 忽略存储错误
+    }
+
+    // 应用折叠状态
+    if (isCollapsed) {
+        propertiesSection.classList.add('collapsed');
+        propertiesHeader.querySelector('.vn-properties-toggle').textContent = '▶';
+    }
+
+    // 折叠/展开事件
+    propertiesHeader.addEventListener('click', async () => {
+        const toggle = propertiesHeader.querySelector('.vn-properties-toggle');
+        const collapsed = propertiesSection.classList.toggle('collapsed');
+        toggle.textContent = collapsed ? '▶' : '▼';
+
+        // 存储折叠状态
+        try {
+            await chrome.storage.local.set({ propertiesCollapsed: collapsed });
+        } catch (e) {
+            // 忽略存储错误
+        }
+    });
+
+    // 提取属性并渲染
+    editorInstance.properties = extractPropertiesAsArray();
+    renderPropertiesList(propertiesList);
+
+    // 添加属性按钮
+    addPropertyBtn.addEventListener('click', () => {
+        editorInstance.properties.push({ key: '', value: '' });
+        renderPropertiesList(propertiesList);
+        // 聚焦到新添加的键输入框
+        const inputs = propertiesList.querySelectorAll('.vn-property-key');
+        if (inputs.length > 0) {
+            inputs[inputs.length - 1].focus();
+        }
+    });
+}
+
+/**
+ * 渲染属性列表（双栏模式）
+ */
+function renderPropertiesList(container) {
+    container.innerHTML = editorInstance.properties.map((prop, index) => `
+        <div class="vn-property-row" data-index="${index}">
+            <input type="text" class="vn-property-key" value="${escapeHtml(prop.key)}" placeholder="键">
+            <input type="text" class="vn-property-value" value="${escapeHtml(prop.value)}" placeholder="值">
+            <button class="vn-property-delete" title="删除">×</button>
+        </div>
+    `).join('');
+
+    // 绑定事件
+    container.querySelectorAll('.vn-property-row').forEach((row, index) => {
+        const keyInput = row.querySelector('.vn-property-key');
+        const valueInput = row.querySelector('.vn-property-value');
+        const deleteBtn = row.querySelector('.vn-property-delete');
+
+        keyInput.addEventListener('input', () => {
+            editorInstance.properties[index].key = keyInput.value;
+        });
+
+        valueInput.addEventListener('input', () => {
+            editorInstance.properties[index].value = valueInput.value;
+        });
+
+        deleteBtn.addEventListener('click', () => {
+            editorInstance.properties.splice(index, 1);
+            renderPropertiesList(container);
+        });
+
+        // 阻止键盘事件冒泡（避免触发编辑器快捷键）
+        keyInput.addEventListener('keydown', e => e.stopPropagation());
+        valueInput.addEventListener('keydown', e => e.stopPropagation());
+    });
+}
+
+/**
+ * HTML 转义
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 /**
@@ -991,6 +1115,133 @@ function getEditorStyles() {
             overflow: hidden;
             display: flex;
             flex-direction: column;
+        }
+
+        /* Properties Section */
+        .vn-properties-section {
+            background: rgba(49, 50, 68, 0.5);
+            border-bottom: 1px solid #313244;
+        }
+
+        .vn-properties-section.collapsed .vn-properties-body {
+            display: none;
+        }
+
+        .vn-properties-header {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .vn-properties-header:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .vn-properties-toggle {
+            color: #6c7086;
+            font-size: 10px;
+            margin-right: 8px;
+            transition: transform 0.2s;
+        }
+
+        .vn-properties-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #89b4fa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .vn-properties-body {
+            padding: 8px 16px 12px;
+        }
+
+        .vn-properties-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .vn-property-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .vn-property-key {
+            width: 80px;
+            flex-shrink: 0;
+            padding: 6px 8px;
+            background: rgba(30, 30, 46, 0.8);
+            border: 1px solid #313244;
+            border-radius: 4px;
+            color: #89b4fa;
+            font-size: 12px;
+            font-weight: 500;
+            outline: none;
+        }
+
+        .vn-property-key:focus {
+            border-color: #89b4fa;
+        }
+
+        .vn-property-value {
+            flex: 1;
+            padding: 6px 8px;
+            background: rgba(30, 30, 46, 0.8);
+            border: 1px solid #313244;
+            border-radius: 4px;
+            color: #cdd6f4;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .vn-property-value:focus {
+            border-color: #89b4fa;
+        }
+
+        .vn-property-delete {
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: transparent;
+            color: #6c7086;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .vn-property-delete:hover {
+            background: #f38ba8;
+            color: white;
+        }
+
+        .vn-add-property-btn {
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: transparent;
+            border: 1px dashed #313244;
+            border-radius: 4px;
+            color: #6c7086;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .vn-add-property-btn:hover {
+            border-color: #89b4fa;
+            color: #89b4fa;
+        }
+
+        /* Body Section */
+        .vn-body-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
         }
 
         .vn-live-editor {

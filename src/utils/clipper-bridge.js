@@ -149,9 +149,57 @@ export function getDefaultTemplate() {
     return DEFAULT_TEMPLATE;
 }
 
+/**
+ * 提取属性为键值对数组（用于双栏编辑器）
+ * @returns {Array<{key: string, value: string}>}
+ */
+export function extractPropertiesAsArray() {
+    const variables = extractPageVariables();
+
+    return [
+        { key: 'title', value: variables['{{title}}'] || '' },
+        { key: 'description', value: variables['{{description}}'] || '' },
+        { key: 'author', value: variables['{{author}}'] || '' },
+        { key: 'source', value: variables['{{url}}'] || '' },
+        { key: 'created', value: variables['{{date}}'] || '' },
+        { key: 'tags', value: 'video-note' },
+        { key: 'updated', value: variables['{{time}}'] || '' }
+    ];
+}
+
+/**
+ * 从属性数组生成 YAML Frontmatter
+ * @param {Array<{key: string, value: string}>} properties
+ * @returns {string}
+ */
+export function propertiesToFrontmatter(properties) {
+    let yaml = '---\n';
+
+    for (const prop of properties) {
+        if (prop.key === 'tags') {
+            // tags 特殊处理为列表格式
+            const tags = prop.value.split(',').map(t => t.trim()).filter(Boolean);
+            if (tags.length > 0) {
+                yaml += `${prop.key}:\n`;
+                tags.forEach(tag => yaml += `  - ${tag}\n`);
+            }
+        } else if (prop.value.includes('\n') || prop.value.includes(':')) {
+            // 多行或包含冒号的值使用引号
+            yaml += `${prop.key}: "${prop.value.replace(/"/g, '\\"')}"\n`;
+        } else if (prop.value) {
+            yaml += `${prop.key}: ${prop.value}\n`;
+        }
+    }
+
+    yaml += '---\n\n';
+    return yaml;
+}
+
 export default {
     extractPageVariables,
     renderTemplate,
     generateFrontmatter,
-    getDefaultTemplate
+    getDefaultTemplate,
+    extractPropertiesAsArray,
+    propertiesToFrontmatter
 };
