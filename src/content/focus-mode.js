@@ -27,6 +27,9 @@ let originalPlayerInfo = null;
 let embeddedEditor = null;
 let currentNoteTitle = '';
 
+let resizeHandlerMove = null;
+let resizeHandlerUp = null;
+
 // 平台播放器选择器配置
 const PLAYER_SELECTORS = {
     bilibili: [
@@ -46,6 +49,9 @@ const PLAYER_SELECTORS = {
         'ytd-player' // YouTube main player component
     ]
 };
+
+// 倍速选项
+const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
 
 /**
  * 检测当前平台
@@ -118,6 +124,9 @@ export function enterFocusMode() {
     player.style.top = '0 !important';
     player.style.margin = '0 !important';
     player.style.zIndex = '1 !important';
+    player.style.transform = 'none !important'; // 修复部分播放器缩放问题
+    player.style.maxWidth = 'none !important';
+    player.style.maxHeight = 'none !important';
 
     // 针对 YouTube 的特殊处理
     if (detectPlatform() === 'youtube') {
@@ -139,6 +148,11 @@ export function enterFocusMode() {
 
     // 添加消息监听器
     window.addEventListener('message', handleVideooMessage);
+
+    // 触发一次 resize 事件通知播放器适配
+    requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+    });
 }
 
 /**
@@ -158,6 +172,11 @@ export function exitFocusMode() {
         } else {
             originalPlayerInfo.parent.appendChild(player);
         }
+
+        // 强制触发一次 resize 以通知播放器恢复布局
+        setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+        }, 100);
     }
 
     // 移除容器
@@ -170,6 +189,10 @@ export function exitFocusMode() {
 
     // 移除消息监听器
     window.removeEventListener('message', handleVideooMessage);
+
+    // 移除 resize 监听器
+    if (resizeHandlerMove) window.removeEventListener('mousemove', resizeHandlerMove);
+    if (resizeHandlerUp) window.removeEventListener('mouseup', resizeHandlerUp);
 }
 
 /**
@@ -185,19 +208,84 @@ export function isFocusModeActive() {
 function createFocusModeContainer() {
     const container = document.createElement('div');
     container.className = 'vn-focus-mode-container';
+
+    // 生成倍速按钮 HTML
+    const speedButtonsHtml = SPEED_OPTIONS.map(rate =>
+        `<button class="vn-speed-btn" data-rate="${rate}">${rate}x</button>`
+    ).join('');
+
     container.innerHTML = `
         <div class="vn-focus-header">
-            <div class="vn-focus-title">Videoo Notee Focus</div>
+            <div class="vn-focus-controls">
+                <span class="vn-focus-label">倍速:</span>
+                ${speedButtonsHtml}
+            </div>
             <button class="vn-focus-close">✕ 退出全屏</button>
         </div>
         <div class="vn-focus-content">
             <div class="vn-focus-video-area"></div>
+            <div class="vn-focus-resizer"></div>
             <div class="vn-focus-editor-area"></div>
         </div>
         <style>${getFocusModeStyles()}</style>
     `;
 
+    // 绑定关闭事件
     container.querySelector('.vn-focus-close').addEventListener('click', exitFocusMode);
+
+    // 绑定倍速事件
+    container.querySelectorAll('.vn-speed-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const rate = parseFloat(btn.dataset.rate);
+            const video = document.querySelector('video');
+            if (video) {
+                video.playbackRate = rate;
+                // 更新选中状态
+                container.querySelectorAll('.vn-speed-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+        });
+    });
+
+    // 绑定调整大小事件
+    const resizer = container.querySelector('.vn-focus-resizer');
+    const editorArea = container.querySelector('.vn-focus-editor-area');
+    const videoArea = container.querySelector('.vn-focus-video-area');
+
+    let isResizing = false;
+
+    resizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        document.body.style.cursor = 'col-resize';
+        videoArea.style.pointerEvents = 'none';
+        e.preventDefault(); // 防止选中
+    });
+
+    // 定义 handler 以便后续移除
+    resizeHandlerMove = (e) => {
+        if (!isResizing) return;
+        requestAnimationFrame(() => {
+            const containerWidth = container.offsetWidth;
+            const newWidth = containerWidth - e.clientX;
+            if (newWidth >= 300 && newWidth <= 1200) {
+                editorArea.style.width = `${newWidth}px`;
+            }
+        });
+    };
+
+    resizeHandlerUp = () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            videoArea.style.pointerEvents = '';
+            // 结束后再次触发 resize 适配播放器
+            window.dispatchEvent(new Event('resize'));
+        }
+    };
+
+    window.addEventListener('mousemove', resizeHandlerMove);
+    window.addEventListener('mouseup', resizeHandlerUp);
+
     return container;
 }
 
@@ -406,10 +494,62 @@ function getFocusModeStyles() {
             justify-content: center !important;
         }
 
+        }
+
+        .vn-focus-resizer {
+            width: 10px; /* 加宽以便抓取 */
+            margin: 0 -1px; /* 微调位置 */
+            background: #313244; /* 提亮颜色以便看见 */
+            cursor: col-resize;
+            border-left: 1px solid #45475a;
+            border-right: 1px solid #45475a;
+            position: relative;
+            z-index: 2147483647 !important; /* 最高层级 */
+            transition: background 0.2s;
+            flex-shrink: 0 !important; /* 防止被压缩 */
+        }
+
+        .vn-focus-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .vn-focus-label {
+            color: #a6adc8;
+            font-size: 13px;
+        }
+
+        .vn-speed-btn {
+            background: #313244;
+            color: #bac2de;
+            border: 1px solid #45475a;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .vn-speed-btn:hover {
+            background: #45475a;
+            color: #cdd6f4;
+        }
+
+        .vn-speed-btn.active {
+            background: #89b4fa;
+            color: #1e1e2e;
+            border-color: #89b4fa;
+            font-weight: 600;
+        }
+
+        .vn-focus-resizer:hover {
+            background: #89b4fa;
+        }
+
         .vn-focus-editor-area {
-            width: 420px !important;
+            width: 420px; /* 移除 !important 允许 JS 修改 */
             background: #1e1e2e !important;
-            border-left: 1px solid #313244 !important;
             display: flex !important;
             flex-direction: column !important;
             position: relative !important;

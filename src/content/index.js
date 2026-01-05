@@ -42,7 +42,7 @@ async function init() {
     await currentAdapter.init();
 
     // 创建浮动工具栏
-    createToolbar();
+    await createToolbar();
 
     // 监听消息
     browser.runtime.onMessage.addListener(handleMessage);
@@ -56,14 +56,33 @@ async function init() {
 /**
  * 创建浮动工具栏
  */
-function createToolbar() {
+async function createToolbar() {
     if (toolbar) {
         toolbar.remove();
     }
 
+    // 读取保存的状态
+    let savedState = {};
+    try {
+        savedState = (await browser.storage.local.get('toolbarState'))?.toolbarState || {};
+    } catch (e) { }
+
     toolbar = document.createElement('div');
     toolbar.id = 'videoo-notee-toolbar';
+    if (savedState.collapsed) {
+        toolbar.classList.add('collapsed');
+    }
+
+    // 应用保存的位置
+    if (savedState.left && savedState.top) {
+        toolbar.style.left = savedState.left + 'px';
+        toolbar.style.top = savedState.top + 'px';
+        toolbar.style.bottom = 'auto';
+        toolbar.style.right = 'auto';
+    }
+
     toolbar.innerHTML = `
+    <div class="vn-toolbar-handle" title="双击折叠/展开，拖拽移动"></div>
     <button id="vn-note" title="悬浮窗模式 (Alt+N)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -104,6 +123,44 @@ function createToolbar() {
       padding: 8px;
       border-radius: 8px;
       backdrop-filter: blur(10px);
+      transition: opacity 0.3s, transform 0.3s, width 0.3s, height 0.3s, border-radius 0.3s;
+      user-select: none;
+    }
+
+    #videoo-notee-toolbar.collapsed {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border-radius: 50%;
+        overflow: hidden;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        background: rgba(30, 30, 46, 0.8);
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #videoo-notee-toolbar.collapsed button,
+    #videoo-notee-toolbar.collapsed .vn-toolbar-handle {
+        display: none;
+    }
+
+    #videoo-notee-toolbar.collapsed::after {
+        content: "📝";
+        font-size: 16px;
+        line-height: 1;
+    }
+
+    /* 拖拽把手 */
+    .vn-toolbar-handle {
+        height: 6px;
+        background: rgba(255,255,255,0.2);
+        border-radius: 3px;
+        margin-bottom: 4px;
+        cursor: grab;
+    }
+    .vn-toolbar-handle:hover {
+        background: rgba(255,255,255,0.4);
     }
     
     #videoo-notee-toolbar button {
@@ -156,6 +213,78 @@ function createToolbar() {
 
     // 快捷键
     document.addEventListener('keydown', handleKeyboard);
+
+    // --- 拖拽与折叠逻辑 ---
+    let isDragging = false;
+    let dragStartTime = 0;
+    let startX, startY, startLeft, startTop;
+
+    const saveState = async () => {
+        const state = {
+            collapsed: toolbar.classList.contains('collapsed'),
+            left: parseFloat(toolbar.style.left) || null,
+            top: parseFloat(toolbar.style.top) || null
+        };
+        try {
+            await browser.storage.local.set({ toolbarState: state });
+        } catch (e) { }
+    };
+
+    toolbar.addEventListener('mousedown', (e) => {
+        // 仅在空白处或handle上触发拖拽，或者折叠状态下任意位置
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+            if (!toolbar.classList.contains('collapsed')) return;
+        }
+
+        isDragging = true;
+        dragStartTime = Date.now();
+        startX = e.clientX;
+        startY = e.clientY;
+
+        const rect = toolbar.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        // 切换为绝对定位（强制重置 bottom/right）
+        toolbar.style.left = startLeft + 'px';
+        toolbar.style.top = startTop + 'px';
+        toolbar.style.bottom = 'auto';
+        toolbar.style.right = 'auto';
+
+        toolbar.style.cursor = 'grabbing';
+        e.preventDefault(); // 防止选中文本
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        toolbar.style.left = (startLeft + dx) + 'px';
+        toolbar.style.top = (startTop + dy) + 'px';
+    });
+
+    window.addEventListener('mouseup', async (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        toolbar.style.cursor = '';
+
+        // 如果移动距离很小且时间很短（点击），则由 click/dblclick 处理
+        // 保存位置
+        await saveState();
+    });
+
+    // 双击折叠/展开
+    toolbar.addEventListener('dblclick', async (e) => {
+        // 防止点按钮触发
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+            if (!toolbar.classList.contains('collapsed')) return; // 展开状态下点按钮不动作
+        }
+
+        toolbar.classList.toggle('collapsed');
+        await saveState();
+    });
 }
 
 /**
