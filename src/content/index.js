@@ -64,22 +64,16 @@ function createToolbar() {
     toolbar = document.createElement('div');
     toolbar.id = 'videoo-notee-toolbar';
     toolbar.innerHTML = `
-    <button id="vn-screenshot" title="截图 (Alt+S)">
+    <button id="vn-note" title="悬浮窗模式 (Alt+N)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2"/>
-        <circle cx="8.5" cy="8.5" r="1.5"/>
-        <path d="M21 15l-5-5L5 21"/>
+        <path d="M9 3v18"/>
       </svg>
     </button>
-    <button id="vn-note" title="打开笔记 (Alt+N)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 20h9"/>
-        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-      </svg>
-    </button>
-    <button id="vn-focus" title="视频模式">
+    <button id="vn-focus" title="全屏模式 (Alt+F)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <line x1="12" y1="3" x2="12" y2="17"/>
         <path d="M8 21h8"/>
         <path d="M12 17v4"/>
       </svg>
@@ -156,7 +150,6 @@ function createToolbar() {
     document.body.appendChild(toolbar);
 
     // 绑定事件
-    document.getElementById('vn-screenshot').addEventListener('click', handleScreenshot);
     document.getElementById('vn-note').addEventListener('click', handleOpenEditor);
     document.getElementById('vn-focus').addEventListener('click', handleFocusMode);
     document.getElementById('vn-subtitle').addEventListener('click', handleSubtitle);
@@ -205,17 +198,14 @@ function handleOpenEditor() {
 }
 
 /**
- * 进入视频模式
+ * 进入全屏模式（左右分屏）
  */
 function handleFocusMode() {
     if (isFocusModeActive()) {
         exitFocusMode();
     } else {
         enterFocusMode();
-        // 延迟创建编辑器
-        setTimeout(() => {
-            showEditor();
-        }, 100);
+        // 全屏模式自带内嵌编辑器，无需再打开悬浮编辑器
     }
 }
 

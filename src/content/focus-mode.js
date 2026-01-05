@@ -1,12 +1,25 @@
 /**
  * 视频模式（Focus Mode）
- * 提取原生视频播放器到全屏容器
+ * 提取原生视频播放器到全屏容器，右侧嵌入编辑器
  */
+
+import {
+    initFileSystem,
+    saveNote as saveNoteToLocal,
+    saveScreenshot as saveScreenshotToLocal,
+    hasDirectoryAccess,
+    getDirectoryName,
+    getAssetsFolder
+} from '../lib/local-storage.js';
+import { checkAndShowDirectoryDialog } from './directory-dialog.js';
+import { generateFrontmatter } from '../utils/clipper-bridge.js';
 
 // Focus Mode 状态
 let focusModeActive = false;
 let focusContainer = null;
 let originalPlayerInfo = null;
+let embeddedEditor = null;
+let currentNoteTitle = '';
 
 // 平台播放器选择器配置
 const PLAYER_SELECTORS = {
@@ -120,6 +133,7 @@ export function enterFocusMode() {
 
     // 创建视频区域
     const videoArea = focusContainer.querySelector('.vn-focus-video-area');
+    const editorArea = focusContainer.querySelector('.vn-focus-editor-area');
 
     // 移动播放器到视频区域
     videoArea.appendChild(player);
@@ -127,11 +141,14 @@ export function enterFocusMode() {
     // 添加到页面
     document.body.appendChild(focusContainer);
 
+    // 创建内嵌编辑器
+    createEmbeddedEditor(editorArea);
+
     // 锁定滚动
     document.body.style.overflow = 'hidden';
 
     focusModeActive = true;
-    console.log('[Videoo Notee] 进入视频模式');
+    console.log('[Videoo Notee] 进入全屏模式');
 
     // 通知编辑器
     window.postMessage({ type: 'VN_FOCUS_MODE_ENTERED' }, '*');
@@ -299,6 +316,202 @@ function getVideoElement() {
         return focusContainer.querySelector('video');
     }
     return document.querySelector('video');
+}
+
+/**
+ * 创建内嵌编辑器（用于全屏模式右侧分栏）
+ */
+async function createEmbeddedEditor(container) {
+    // 确保文件系统访问权限
+    const hasAccess = await initFileSystem();
+    if (!hasAccess) {
+        const selected = await checkAndShowDirectoryDialog();
+        if (!selected) {
+            console.log('[Videoo Notee] 用户取消选择目录');
+            return;
+        }
+    }
+
+    // 生成标题
+    const videoTitle = document.title.replace(/[-_|].*/g, '').trim();
+    currentNoteTitle = `${videoTitle}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`;
+
+    // 创建编辑器结构
+    container.innerHTML = `
+        <div class="vn-embedded-editor">
+            <div class="vn-embedded-header">
+                <input type="text" class="vn-embedded-title" value="${currentNoteTitle}" placeholder="笔记标题">
+                <span class="vn-embedded-save-status">📁 ${getDirectoryName() || '未选择'}</span>
+            </div>
+            <div class="vn-embedded-toolbar">
+                <button class="vn-embedded-tool" data-action="screenshot" title="截图">📸</button>
+                <button class="vn-embedded-tool" data-action="timestamp" title="时间戳">⏱️</button>
+                <button class="vn-embedded-tool" data-action="save" title="保存">💾</button>
+            </div>
+            <div class="vn-embedded-content" contenteditable="true" placeholder="在这里写笔记..."></div>
+        </div>
+    `;
+
+    // 添加样式
+    const style = document.createElement('style');
+    style.textContent = getEmbeddedEditorStyles();
+    container.appendChild(style);
+
+    // 获取编辑器元素
+    const editor = container.querySelector('.vn-embedded-content');
+    const titleInput = container.querySelector('.vn-embedded-title');
+
+    // 生成 Frontmatter 作为初始内容
+    const frontmatter = generateFrontmatter();
+    editor.innerHTML = markdownToHtmlSimple(frontmatter);
+
+    embeddedEditor = { container, editor, titleInput };
+
+    // 绑定事件
+    const toolbar = container.querySelector('.vn-embedded-toolbar');
+    toolbar.querySelectorAll('.vn-embedded-tool').forEach(btn => {
+        btn.addEventListener('mousedown', e => e.preventDefault());
+        btn.addEventListener('click', () => handleEmbeddedToolAction(btn.dataset.action));
+    });
+
+    // 键盘事件
+    editor.addEventListener('keydown', e => e.stopPropagation());
+    titleInput.addEventListener('keydown', e => e.stopPropagation());
+}
+
+/**
+ * 处理内嵌编辑器工具栏操作
+ */
+function handleEmbeddedToolAction(action) {
+    switch (action) {
+        case 'screenshot':
+            window.postMessage({ type: 'VN_CAPTURE_SCREENSHOT' }, '*');
+            break;
+        case 'timestamp':
+            window.postMessage({ type: 'VN_GET_TIMESTAMP' }, '*');
+            break;
+        case 'save':
+            saveEmbeddedNote();
+            break;
+    }
+}
+
+/**
+ * 保存内嵌编辑器笔记
+ */
+async function saveEmbeddedNote() {
+    if (!embeddedEditor) return;
+
+    const title = embeddedEditor.titleInput.value.trim() || currentNoteTitle;
+    const content = htmlToMarkdownSimple(embeddedEditor.editor.innerHTML);
+
+    try {
+        await saveNoteToLocal(title, content);
+        console.log('[Videoo Notee] 笔记已保存:', title);
+    } catch (error) {
+        console.error('[Videoo Notee] 保存失败:', error);
+    }
+}
+
+/**
+ * 简单的 Markdown 到 HTML 转换
+ */
+function markdownToHtmlSimple(markdown) {
+    return markdown
+        .replace(/^---[\s\S]*?---\n?/m, match => `<pre class="frontmatter">${match}</pre>`)
+        .replace(/\n/g, '<br>');
+}
+
+/**
+ * 简单的 HTML 到 Markdown 转换
+ */
+function htmlToMarkdownSimple(html) {
+    return html
+        .replace(/<pre class="frontmatter">([\s\S]*?)<\/pre>/g, '$1')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\u00A0/g, ' ');
+}
+
+/**
+ * 获取内嵌编辑器样式
+ */
+function getEmbeddedEditorStyles() {
+    return `
+        .vn-embedded-editor {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            color: #cdd6f4;
+        }
+        .vn-embedded-header {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            gap: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid #313244;
+        }
+        .vn-embedded-title {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #cdd6f4;
+            font-size: 16px;
+            font-weight: 600;
+            outline: none;
+        }
+        .vn-embedded-title::placeholder {
+            color: #6c7086;
+        }
+        .vn-embedded-save-status {
+            font-size: 12px;
+            color: #6c7086;
+        }
+        .vn-embedded-toolbar {
+            display: flex;
+            padding: 8px 16px;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid #313244;
+        }
+        .vn-embedded-tool {
+            padding: 6px 12px;
+            background: #313244;
+            border: none;
+            border-radius: 6px;
+            color: #cdd6f4;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .vn-embedded-tool:hover {
+            background: #45475a;
+        }
+        .vn-embedded-content {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.6;
+            outline: none;
+        }
+        .vn-embedded-content:empty::before {
+            content: attr(placeholder);
+            color: #6c7086;
+        }
+        .vn-embedded-content .frontmatter {
+            background: rgba(137, 180, 250, 0.1);
+            border: 1px solid rgba(137, 180, 250, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #89b4fa;
+            white-space: pre-wrap;
+        }
+    `;
 }
 
 /**
