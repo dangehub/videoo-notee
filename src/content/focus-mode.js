@@ -345,8 +345,22 @@ async function createEmbeddedEditor(container) {
         btn.addEventListener('click', () => handleEmbeddedToolAction(btn.dataset.action));
     });
 
-    // 键盘事件
-    titleInput.addEventListener('keydown', e => e.stopPropagation());
+    // 键盘事件阻断 (防止触发播放器快捷键)
+    const editorArea = container.querySelector('.vn-embedded-editor');
+    const stopPropagation = (e) => {
+        // 允许 Escape 退出
+        if (e.key === 'Escape') return;
+        e.stopPropagation();
+    };
+
+    editorArea.addEventListener('keydown', stopPropagation);
+    editorArea.addEventListener('keypress', stopPropagation);
+    editorArea.addEventListener('keyup', stopPropagation);
+
+    // 标题输入框特定处理
+    titleInput.addEventListener('keydown', stopPropagation);
+    titleInput.addEventListener('keypress', stopPropagation);
+    titleInput.addEventListener('keyup', stopPropagation);
 }
 
 /**
