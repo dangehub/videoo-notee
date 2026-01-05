@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Videoo Notee",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "视频笔记扩展 - 截图、时间戳、字幕提取、AI 总结",
     "author": "曲淡歌",
     "icons": {
