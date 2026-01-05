@@ -3,16 +3,22 @@
  * 提取原生视频播放器到全屏容器，右侧嵌入编辑器
  */
 
-import {
-    initFileSystem,
-    saveNote as saveNoteToLocal,
-    saveScreenshot as saveScreenshotToLocal,
-    hasDirectoryAccess,
-    getDirectoryName,
-    getAssetsFolder
-} from '../lib/local-storage.js';
+import { initFileSystem, getDirectoryName, readNote, readResource } from '../lib/local-storage.js';
 import { checkAndShowDirectoryDialog } from './directory-dialog.js';
-import { generateFrontmatter } from '../utils/clipper-bridge.js';
+import { showFileListDialog } from './file-list-dialog.js';
+import {
+    createEditorContent,
+    initEditorCore,
+    saveNote,
+    getEditorCoreStyles,
+    parseFrontmatter,
+    getEditorInstance,
+    markdownToHtml,
+    renderPropertiesList,
+    loadEditorImages,
+    insertScreenshot,
+    insertTimestamp
+} from './editor-core.js';
 
 // Focus Mode 状态
 let focusModeActive = false;
@@ -25,18 +31,19 @@ let currentNoteTitle = '';
 const PLAYER_SELECTORS = {
     bilibili: [
         '.bpx-player-container',
+        '#player_module',
         '#bilibili-player',
-        '.bilibili-player-area'
+        '.player-container',
+        '.bilibili-player-video-wrap'
     ],
     youtube: [
+        '#player-container-outer', // YouTube Theater mode container
+        '#player-container-inner',
+        '#player-container',
+        '.html5-video-player',
         '#movie_player',
-        'ytd-player',
-        '.html5-video-player'
-    ],
-    generic: [
-        '[class*="player"]',
-        '[class*="video-container"]',
-        '[id*="player"]'
+        '.video-stream',
+        'ytd-player' // YouTube main player component
     ]
 };
 
@@ -44,161 +51,28 @@ const PLAYER_SELECTORS = {
  * 检测当前平台
  */
 function detectPlatform() {
-    const hostname = window.location.hostname;
-    if (hostname.includes('bilibili.com')) return 'bilibili';
-    if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) return 'youtube';
-    if (hostname.includes('coursera.org')) return 'coursera';
-    if (hostname.includes('udemy.com')) return 'udemy';
-    return 'generic';
+    const host = window.location.hostname;
+    if (host.includes('bilibili.com')) return 'bilibili';
+    if (host.includes('youtube.com')) return 'youtube';
+    return 'unknown';
 }
 
 /**
- * 找到视频播放器容器
+ * 获取播放器元素
  */
-function findPlayerContainer() {
+function getPlayerElement() {
     const platform = detectPlatform();
-    const selectors = PLAYER_SELECTORS[platform] || PLAYER_SELECTORS.generic;
+    const selectors = PLAYER_SELECTORS[platform] || [];
 
-    // 首先尝试平台特定选择器
     for (const selector of selectors) {
-        const player = document.querySelector(selector);
-        if (player && isValidPlayer(player)) {
-            console.log(`[Videoo Notee] 找到播放器: ${selector}`);
-            return player;
-        }
+        const el = document.querySelector(selector);
+        if (el && el.offsetHeight > 0) return el;
     }
-
-    // 回退：找到包含 video 元素的最近合适容器
-    const video = document.querySelector('video');
-    if (video) {
-        let container = video.parentElement;
-        // 向上遍历找到合适的容器（有一定大小且不是 body）
-        while (container && container !== document.body) {
-            const rect = container.getBoundingClientRect();
-            if (rect.width >= 300 && rect.height >= 200) {
-                console.log(`[Videoo Notee] 使用 video 父容器`);
-                return container;
-            }
-            container = container.parentElement;
-        }
-        // 如果找不到合适容器，直接返回 video
-        return video;
-    }
-
-    return null;
+    return document.querySelector('video')?.parentElement; // Fallback
 }
 
 /**
- * 验证播放器是否有效
- */
-function isValidPlayer(element) {
-    const rect = element.getBoundingClientRect();
-    // 检查是否有足够大小且可见
-    return rect.width >= 200 && rect.height >= 100 &&
-        window.getComputedStyle(element).display !== 'none';
-}
-
-/**
- * 进入视频模式
- */
-export function enterFocusMode() {
-    if (focusModeActive) {
-        console.log('[Videoo Notee] 已在视频模式中');
-        return;
-    }
-
-    const player = findPlayerContainer();
-    if (!player) {
-        console.error('[Videoo Notee] 找不到视频播放器');
-        return;
-    }
-
-    // 保存原始位置信息
-    originalPlayerInfo = {
-        element: player,
-        parent: player.parentElement,
-        nextSibling: player.nextSibling,
-        originalStyles: {
-            position: player.style.position,
-            width: player.style.width,
-            height: player.style.height,
-            top: player.style.top,
-            left: player.style.left,
-            zIndex: player.style.zIndex
-        }
-    };
-
-    // 创建全屏容器
-    focusContainer = createFocusModeContainer();
-
-    // 创建视频区域
-    const videoArea = focusContainer.querySelector('.vn-focus-video-area');
-    const editorArea = focusContainer.querySelector('.vn-focus-editor-area');
-
-    // 移动播放器到视频区域
-    videoArea.appendChild(player);
-
-    // 添加到页面
-    document.body.appendChild(focusContainer);
-
-    // 创建内嵌编辑器
-    createEmbeddedEditor(editorArea);
-
-    // 锁定滚动
-    document.body.style.overflow = 'hidden';
-
-    focusModeActive = true;
-    console.log('[Videoo Notee] 进入全屏模式');
-
-    // 通知编辑器
-    window.postMessage({ type: 'VN_FOCUS_MODE_ENTERED' }, '*');
-}
-
-/**
- * 退出视频模式
- */
-export function exitFocusMode() {
-    if (!focusModeActive || !originalPlayerInfo) {
-        return;
-    }
-
-    const player = originalPlayerInfo.element;
-
-    // 恢复播放器原始位置
-    if (originalPlayerInfo.nextSibling) {
-        originalPlayerInfo.parent.insertBefore(player, originalPlayerInfo.nextSibling);
-    } else {
-        originalPlayerInfo.parent.appendChild(player);
-    }
-
-    // 恢复原始样式
-    const styles = originalPlayerInfo.originalStyles;
-    player.style.position = styles.position;
-    player.style.width = styles.width;
-    player.style.height = styles.height;
-    player.style.top = styles.top;
-    player.style.left = styles.left;
-    player.style.zIndex = styles.zIndex;
-
-    // 移除全屏容器
-    if (focusContainer) {
-        focusContainer.remove();
-        focusContainer = null;
-    }
-
-    // 恢复滚动
-    document.body.style.overflow = '';
-
-    originalPlayerInfo = null;
-    focusModeActive = false;
-    console.log('[Videoo Notee] 退出视频模式');
-
-    // 通知编辑器
-    window.postMessage({ type: 'VN_FOCUS_MODE_EXITED' }, '*');
-}
-
-/**
- * 切换视频模式
+ * 切换 Focus Mode
  */
 export function toggleFocusMode() {
     if (focusModeActive) {
@@ -209,133 +83,140 @@ export function toggleFocusMode() {
 }
 
 /**
- * 创建视频模式容器
+ * 进入 Focus Mode
+ */
+export function enterFocusMode() {
+    if (focusModeActive) return;
+
+    const player = getPlayerElement();
+    if (!player) {
+        console.warn('未找到视频播放器');
+        return;
+    }
+
+    // 保存原始状态
+    originalPlayerInfo = {
+        parent: player.parentElement,
+        nextSibling: player.nextElementSibling,
+        style: player.getAttribute('style') || ''
+    };
+
+    // 创建全屏容器
+    focusContainer = createFocusModeContainer();
+    document.body.appendChild(focusContainer);
+
+    // 移动播放器
+    const videoArea = focusContainer.querySelector('.vn-focus-video-area');
+    videoArea.appendChild(player);
+
+    // 强制样式适配
+    player.dataset.originalStyle = originalPlayerInfo.style;
+    player.style.width = '100% !important';
+    player.style.height = '100% !important';
+    player.style.position = 'relative !important';
+    player.style.left = '0 !important';
+    player.style.top = '0 !important';
+    player.style.margin = '0 !important';
+    player.style.zIndex = '1 !important';
+
+    // 针对 YouTube 的特殊处理
+    if (detectPlatform() === 'youtube') {
+        const video = player.querySelector('video');
+        if (video) {
+            video.style.left = '0';
+            video.style.top = '0';
+            video.style.width = '100%';
+            video.style.height = '100%';
+        }
+    }
+
+    // 创建内嵌编辑器
+    const editorArea = focusContainer.querySelector('.vn-focus-editor-area');
+    createEmbeddedEditor(editorArea);
+
+    focusModeActive = true;
+    document.body.style.overflow = 'hidden'; // 禁止页面滚动
+
+    // 添加消息监听器
+    window.addEventListener('message', handleVideooMessage);
+}
+
+/**
+ * 退出 Focus Mode
+ */
+export function exitFocusMode() {
+    if (!focusModeActive || !originalPlayerInfo) return;
+
+    const player = focusContainer.querySelector('.vn-focus-video-area').children[0];
+    if (player) {
+        // 恢复播放器位置
+        player.setAttribute('style', originalPlayerInfo.style);
+        delete player.dataset.originalStyle;
+
+        if (originalPlayerInfo.nextSibling) {
+            originalPlayerInfo.parent.insertBefore(player, originalPlayerInfo.nextSibling);
+        } else {
+            originalPlayerInfo.parent.appendChild(player);
+        }
+    }
+
+    // 移除容器
+    focusContainer.remove();
+    focusContainer = null;
+    originalPlayerInfo = null;
+    embeddedEditor = null;
+    focusModeActive = false;
+    document.body.style.overflow = '';
+
+    // 移除消息监听器
+    window.removeEventListener('message', handleVideooMessage);
+}
+
+/**
+ * 判断是否处于 Focus Mode
+ */
+export function isFocusModeActive() {
+    return focusModeActive;
+}
+
+/**
+ * 创建全屏容器结构
  */
 function createFocusModeContainer() {
     const container = document.createElement('div');
     container.className = 'vn-focus-mode-container';
     container.innerHTML = `
-        <div class="vn-focus-controls">
-            <button class="vn-focus-btn vn-focus-speed-down" title="减速">🐢</button>
-            <span class="vn-focus-speed-display">1.0x</span>
-            <button class="vn-focus-btn vn-focus-speed-up" title="加速">⚡</button>
-            <div class="vn-focus-spacer"></div>
-            <button class="vn-focus-btn vn-focus-close" title="退出全屏模式 (ESC)">✕</button>
+        <div class="vn-focus-header">
+            <div class="vn-focus-title">Videoo Notee Focus</div>
+            <button class="vn-focus-close">✕ 退出全屏</button>
         </div>
-        <div class="vn-focus-main">
+        <div class="vn-focus-content">
             <div class="vn-focus-video-area"></div>
-            <div class="vn-focus-gutter"></div>
             <div class="vn-focus-editor-area"></div>
         </div>
+        <style>${getFocusModeStyles()}</style>
     `;
 
-    // 注入样式
-    const style = document.createElement('style');
-    style.textContent = getFocusModeStyles();
-    container.appendChild(style);
-
-    // 绑定事件
-    bindFocusModeEvents(container);
-
+    container.querySelector('.vn-focus-close').addEventListener('click', exitFocusMode);
     return container;
 }
 
 /**
- * 绑定视频模式事件
- */
-function bindFocusModeEvents(container) {
-    const closeBtn = container.querySelector('.vn-focus-close');
-    const speedDownBtn = container.querySelector('.vn-focus-speed-down');
-    const speedUpBtn = container.querySelector('.vn-focus-speed-up');
-    const speedDisplay = container.querySelector('.vn-focus-speed-display');
-    const gutter = container.querySelector('.vn-focus-gutter');
-    const videoArea = container.querySelector('.vn-focus-video-area');
-    const editorArea = container.querySelector('.vn-focus-editor-area');
-
-    // 关闭按钮
-    closeBtn.addEventListener('click', exitFocusMode);
-
-    // 速度控制
-    speedDownBtn.addEventListener('click', () => {
-        const video = getVideoElement();
-        if (video) {
-            video.playbackRate = Math.max(0.25, video.playbackRate - 0.25);
-            speedDisplay.textContent = video.playbackRate.toFixed(2) + 'x';
-        }
-    });
-
-    speedUpBtn.addEventListener('click', () => {
-        const video = getVideoElement();
-        if (video) {
-            video.playbackRate = Math.min(4, video.playbackRate + 0.25);
-            speedDisplay.textContent = video.playbackRate.toFixed(2) + 'x';
-        }
-    });
-
-    // 拖拽调整分栏
-    let isResizing = false;
-    gutter.addEventListener('mousedown', (e) => {
-        isResizing = true;
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-        e.preventDefault();
-        e.stopPropagation();
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isResizing) return;
-        const containerRect = container.querySelector('.vn-focus-main').getBoundingClientRect();
-        const percent = (e.clientX - containerRect.left) / containerRect.width * 100;
-        const clampedPercent = Math.min(80, Math.max(20, percent));
-        videoArea.style.setProperty('flex', `0 0 ${clampedPercent}%`, 'important');
-        editorArea.style.setProperty('flex', `0 0 ${100 - clampedPercent - 2}%`, 'important');
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isResizing) {
-            isResizing = false;
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        }
-    });
-
-    // ESC 键退出
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && focusModeActive) {
-            exitFocusMode();
-        }
-    });
-}
-
-/**
- * 获取视频元素
- */
-function getVideoElement() {
-    if (focusContainer) {
-        return focusContainer.querySelector('video');
-    }
-    return document.querySelector('video');
-}
-
-/**
- * 创建内嵌编辑器（用于全屏模式右侧分栏）
+ * 创建内嵌编辑器（复用 editor-core）
  */
 async function createEmbeddedEditor(container) {
     // 确保文件系统访问权限
     const hasAccess = await initFileSystem();
     if (!hasAccess) {
-        const selected = await checkAndShowDirectoryDialog();
-        if (!selected) {
-            console.log('[Videoo Notee] 用户取消选择目录');
-            return;
-        }
+        // 尝试自动或者静默不做，因为不能在非用户触发下弹窗
+        // 这里依赖于之前可能已经授权过
     }
 
     // 生成标题
     const videoTitle = document.title.replace(/[-_|].*/g, '').trim();
     currentNoteTitle = `${videoTitle}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}`;
 
-    // 创建编辑器结构
+    // 创建编辑器外壳
     container.innerHTML = `
         <div class="vn-embedded-editor">
             <div class="vn-embedded-header">
@@ -345,28 +226,31 @@ async function createEmbeddedEditor(container) {
             <div class="vn-embedded-toolbar">
                 <button class="vn-embedded-tool" data-action="screenshot" title="截图">📸</button>
                 <button class="vn-embedded-tool" data-action="timestamp" title="时间戳">⏱️</button>
+                <button class="vn-embedded-tool" data-action="open" title="打开笔记">📜</button>
                 <button class="vn-embedded-tool" data-action="save" title="保存">💾</button>
             </div>
-            <div class="vn-embedded-content" contenteditable="true" placeholder="在这里写笔记..."></div>
+            <div class="vn-embedded-core-container"></div>
         </div>
     `;
 
     // 添加样式
     const style = document.createElement('style');
-    style.textContent = getEmbeddedEditorStyles();
+    style.textContent = getEmbeddedEditorStyles() + getEditorCoreStyles();
     container.appendChild(style);
 
+    // 创建并插入编辑器核心
+    const coreContainer = container.querySelector('.vn-embedded-core-container');
+    const editorCore = createEditorContent('focus-mode');
+    coreContainer.appendChild(editorCore);
+
+    // 初始化编辑器核心
+    await initEditorCore('focus-mode', currentNoteTitle);
+
     // 获取编辑器元素
-    const editor = container.querySelector('.vn-embedded-content');
     const titleInput = container.querySelector('.vn-embedded-title');
+    embeddedEditor = { container, titleInput };
 
-    // 生成 Frontmatter 作为初始内容
-    const frontmatter = generateFrontmatter();
-    editor.innerHTML = markdownToHtmlSimple(frontmatter);
-
-    embeddedEditor = { container, editor, titleInput };
-
-    // 绑定事件
+    // 绑定工具栏事件
     const toolbar = container.querySelector('.vn-embedded-toolbar');
     toolbar.querySelectorAll('.vn-embedded-tool').forEach(btn => {
         btn.addEventListener('mousedown', e => e.preventDefault());
@@ -374,7 +258,6 @@ async function createEmbeddedEditor(container) {
     });
 
     // 键盘事件
-    editor.addEventListener('keydown', e => e.stopPropagation());
     titleInput.addEventListener('keydown', e => e.stopPropagation());
 }
 
@@ -384,10 +267,43 @@ async function createEmbeddedEditor(container) {
 function handleEmbeddedToolAction(action) {
     switch (action) {
         case 'screenshot':
-            window.postMessage({ type: 'VN_CAPTURE_SCREENSHOT' }, '*');
+            window.postMessage({ type: 'VN_REQUEST_SCREENSHOT' }, '*');
             break;
         case 'timestamp':
-            window.postMessage({ type: 'VN_GET_TIMESTAMP' }, '*');
+            window.postMessage({ type: 'VN_REQUEST_TIMESTAMP' }, '*');
+            break;
+        case 'open':
+            showFileListDialog(async (note) => {
+                try {
+                    const content = await readNote(note.name);
+                    const editorInstance = getEditorInstance('focus-mode');
+
+                    if (editorInstance && editorInstance.liveEditor) {
+                        currentNoteTitle = note.title;
+                        const titleInput = embeddedEditor.titleInput;
+                        if (titleInput) titleInput.value = currentNoteTitle;
+
+                        // 解析 frontmatter 和正文
+                        const { properties, body } = parseFrontmatter(content);
+
+                        // 填充属性区
+                        editorInstance.properties = properties;
+
+                        // 更新属性区 UI (使用 editor-core 导出的函数)
+                        renderPropertiesList(editorInstance);
+
+                        // 填充正文 (Markdown 转 HTML)
+                        editorInstance.liveEditor.innerHTML = markdownToHtml(body);
+
+                        // 加载本地图片
+                        loadEditorImages('focus-mode');
+
+                        console.log('[Focus Mode] 已打开笔记:', note.name);
+                    }
+                } catch (e) {
+                    console.error('[Focus Mode] 打开笔记失败:', e);
+                }
+            });
             break;
         case 'save':
             saveEmbeddedNote();
@@ -396,44 +312,114 @@ function handleEmbeddedToolAction(action) {
 }
 
 /**
+ * 全局消息处理函数 (具名函数以避免重复绑定)
+ */
+async function handleVideooMessage(event) {
+    if (event.source !== window) return;
+    const { type, data } = event.data || {};
+
+    // 仅在 Focus Mode 激活时处理
+    if (!isFocusModeActive()) return;
+
+    if (type === 'VN_SCREENSHOT_RESULT' && data) {
+        await insertScreenshot('focus-mode', data.dataUrl, data.timestamp, data.videoUrl);
+        saveEmbeddedNote();
+    }
+
+    if (type === 'VN_TIMESTAMP_RESULT' && data) {
+        insertTimestamp('focus-mode', data.timestamp, data.videoUrl);
+    }
+}
+
+
+
+
+/**
  * 保存内嵌编辑器笔记
  */
 async function saveEmbeddedNote() {
     if (!embeddedEditor) return;
-
     const title = embeddedEditor.titleInput.value.trim() || currentNoteTitle;
-    const content = htmlToMarkdownSimple(embeddedEditor.editor.innerHTML);
-
-    try {
-        await saveNoteToLocal(title, content);
-        console.log('[Videoo Notee] 笔记已保存:', title);
-    } catch (error) {
-        console.error('[Videoo Notee] 保存失败:', error);
-    }
+    await saveNote('focus-mode', title);
 }
 
 /**
- * 简单的 Markdown 到 HTML 转换
+ * 获取视频模式样式
  */
-function markdownToHtmlSimple(markdown) {
-    return markdown
-        .replace(/^---[\s\S]*?---\n?/m, match => `<pre class="frontmatter">${match}</pre>`)
-        .replace(/\n/g, '<br>');
+function getFocusModeStyles() {
+    return `
+        .vn-focus-mode-container {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 2147483646 !important;
+            background: #0a0a0f !important;
+            display: flex !important;
+            flex-direction: column !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        }
+
+        .vn-focus-header {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            padding: 0 20px !important;
+            height: 48px !important;
+            background: #11111b !important;
+            border-bottom: 1px solid #313244 !important;
+        }
+
+        .vn-focus-title {
+            color: #cdd6f4 !important;
+            font-weight: 600 !important;
+            font-size: 16px !important;
+        }
+
+        .vn-focus-close {
+            background: transparent !important;
+            border: 1px solid #45475a !important;
+            color: #cdd6f4 !important;
+            padding: 4px 12px !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            font-size: 13px !important;
+            transition: all 0.2s !important;
+        }
+
+        .vn-focus-close:hover {
+            background: #f38ba8 !important;
+            border-color: #f38ba8 !important;
+            color: #11111b !important;
+        }
+
+        .vn-focus-content {
+            flex: 1 !important;
+            display: flex !important;
+            overflow: hidden !important;
+        }
+
+        .vn-focus-video-area {
+            flex: 1 !important;
+            background: #000 !important;
+            position: relative !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+
+        .vn-focus-editor-area {
+            width: 420px !important;
+            background: #1e1e2e !important;
+            border-left: 1px solid #313244 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            position: relative !important;
+            z-index: 2 !important;
+        }
+    `;
 }
 
 /**
- * 简单的 HTML 到 Markdown 转换
- */
-function htmlToMarkdownSimple(html) {
-    return html
-        .replace(/<pre class="frontmatter">([\s\S]*?)<\/pre>/g, '$1')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]+>/g, '')
-        .replace(/\u00A0/g, ' ');
-}
-
-/**
- * 获取内嵌编辑器样式
+ * 获取内嵌编辑器外壳样式
  */
 function getEmbeddedEditorStyles() {
     return `
@@ -487,197 +473,12 @@ function getEmbeddedEditorStyles() {
         .vn-embedded-tool:hover {
             background: #45475a;
         }
-        .vn-embedded-content {
+        .vn-embedded-core-container {
             flex: 1;
-            padding: 16px;
-            overflow-y: auto;
-            font-size: 14px;
-            line-height: 1.6;
-            outline: none;
-        }
-        .vn-embedded-content:empty::before {
-            content: attr(placeholder);
-            color: #6c7086;
-        }
-        .vn-embedded-content .frontmatter {
-            background: rgba(137, 180, 250, 0.1);
-            border: 1px solid rgba(137, 180, 250, 0.3);
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 16px;
-            font-family: monospace;
-            font-size: 12px;
-            color: #89b4fa;
-            white-space: pre-wrap;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
         }
     `;
 }
-
-/**
- * 获取视频模式样式
- */
-function getFocusModeStyles() {
-    return `
-        .vn-focus-mode-container {
-            position: fixed !important;
-            inset: 0 !important;
-            z-index: 2147483646 !important;
-            background: #0a0a0f !important;
-            display: flex !important;
-            flex-direction: column !important;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-        }
-
-        .vn-focus-controls {
-            display: flex !important;
-            align-items: center !important;
-            padding: 8px 16px !important;
-            background: #1a1a2e !important;
-            gap: 8px !important;
-            border-bottom: 1px solid #313244 !important;
-        }
-
-        .vn-focus-btn {
-            width: 36px !important;
-            height: 36px !important;
-            border: none !important;
-            background: #313244 !important;
-            color: #cdd6f4 !important;
-            font-size: 16px !important;
-            border-radius: 8px !important;
-            cursor: pointer !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            transition: all 0.2s !important;
-        }
-
-        .vn-focus-btn:hover {
-            background: #45475a !important;
-        }
-
-        .vn-focus-close:hover {
-            background: #f38ba8 !important;
-            color: #1e1e2e !important;
-        }
-
-        .vn-focus-speed-display {
-            color: #89b4fa !important;
-            font-size: 14px !important;
-            font-weight: 600 !important;
-            min-width: 50px !important;
-            text-align: center !important;
-        }
-
-        .vn-focus-spacer {
-            flex: 1 !important;
-        }
-
-        .vn-focus-main {
-            flex: 1 !important;
-            display: flex !important;
-            min-height: 0 !important;
-            padding: 16px !important;
-            gap: 0 !important;
-        }
-
-        .vn-focus-video-area {
-            flex: 0 0 60% !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            background: #000 !important;
-            border-radius: 12px !important;
-            overflow: hidden !important;
-            position: relative !important;
-        }
-
-        .vn-focus-video-area video,
-        .vn-focus-video-area iframe {
-            width: 100% !important;
-            height: 100% !important;
-            max-height: 100% !important;
-            object-fit: contain !important;
-        }
-
-        /* B站播放器适配 */
-        .vn-focus-video-area .bpx-player-container,
-        .vn-focus-video-area #bilibili-player {
-            width: 100% !important;
-            height: 100% !important;
-            position: relative !important;
-        }
-
-        .vn-focus-video-area .bpx-player-video-wrap {
-            width: 100% !important;
-            height: 100% !important;
-        }
-
-        /* YouTube 播放器适配 */
-        .vn-focus-video-area #movie_player,
-        .vn-focus-video-area .html5-video-player {
-            width: 100% !important;
-            height: 100% !important;
-            position: relative !important;
-            top: 0 !important;
-            left: 0 !important;
-        }
-
-        .vn-focus-video-area .html5-video-container,
-        .vn-focus-video-area .html5-main-video {
-            width: 100% !important;
-            height: 100% !important;
-            position: relative !important;
-            top: 0 !important;
-            left: 0 !important;
-        }
-
-        .vn-focus-video-area ytd-player,
-        .vn-focus-video-area #player-container-outer,
-        .vn-focus-video-area #player-container-inner,
-        .vn-focus-video-area #player-container {
-            width: 100% !important;
-            height: 100% !important;
-            position: relative !important;
-        }
-
-        /* 确保 YouTube 字幕也正常显示 */
-        .vn-focus-video-area .ytp-caption-window-container {
-            position: absolute !important;
-            bottom: 10% !important;
-        }
-
-        .vn-focus-gutter {
-            width: 8px !important;
-            background: transparent !important;
-            cursor: col-resize !important;
-            transition: background 0.2s !important;
-            margin: 0 4px !important;
-        }
-
-        .vn-focus-gutter:hover {
-            background: rgba(137, 180, 250, 0.3) !important;
-        }
-
-        .vn-focus-editor-area {
-            flex: 0 0 39% !important;
-            background: #1e1e2e !important;
-            border-radius: 12px !important;
-            overflow: hidden !important;
-        }
-    `;
-}
-
-/**
- * 检查是否在视频模式中
- */
-export function isFocusModeActive() {
-    return focusModeActive;
-}
-
-export default {
-    enterFocusMode,
-    exitFocusMode,
-    toggleFocusMode,
-    isFocusModeActive
-};

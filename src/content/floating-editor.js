@@ -16,6 +16,7 @@ import {
 import { checkAndShowDirectoryDialog } from './directory-dialog.js';
 import { showFileListDialog } from './file-list-dialog.js';
 import { extractPropertiesAsArray, propertiesToFrontmatter } from '../utils/clipper-bridge.js';
+import { parseFrontmatter, markdownToHtml, htmlToMarkdown, renderPropertiesList } from './editor-core.js';
 
 // 编辑器状态
 let editorInstance = null;
@@ -210,12 +211,12 @@ async function initPropertiesSection(shadow) {
 
     // 提取属性并渲染
     editorInstance.properties = extractPropertiesAsArray();
-    renderPropertiesList(propertiesList);
+    renderPropertiesList(editorInstance);
 
     // 添加属性按钮
     addPropertyBtn.addEventListener('click', () => {
         editorInstance.properties.push({ key: '', value: '' });
-        renderPropertiesList(propertiesList);
+        renderPropertiesList(editorInstance);
         // 聚焦到新添加的键输入框
         const inputs = propertiesList.querySelectorAll('.vn-property-key');
         if (inputs.length > 0) {
@@ -224,54 +225,11 @@ async function initPropertiesSection(shadow) {
     });
 }
 
-/**
- * 渲染属性列表（双栏模式）
- */
-function renderPropertiesList(container) {
-    container.innerHTML = editorInstance.properties.map((prop, index) => `
-        <div class="vn-property-row" data-index="${index}">
-            <input type="text" class="vn-property-key" value="${escapeHtml(prop.key)}" placeholder="键">
-            <input type="text" class="vn-property-value" value="${escapeHtml(prop.value)}" placeholder="值">
-            <button class="vn-property-delete" title="删除">×</button>
-        </div>
-    `).join('');
 
-    // 绑定事件
-    container.querySelectorAll('.vn-property-row').forEach((row, index) => {
-        const keyInput = row.querySelector('.vn-property-key');
-        const valueInput = row.querySelector('.vn-property-value');
-        const deleteBtn = row.querySelector('.vn-property-delete');
 
-        keyInput.addEventListener('input', () => {
-            editorInstance.properties[index].key = keyInput.value;
-        });
 
-        valueInput.addEventListener('input', () => {
-            editorInstance.properties[index].value = valueInput.value;
-        });
 
-        deleteBtn.addEventListener('click', () => {
-            editorInstance.properties.splice(index, 1);
-            renderPropertiesList(container);
-        });
 
-        // 阻止键盘事件冒泡（避免触发编辑器快捷键）
-        keyInput.addEventListener('keydown', e => e.stopPropagation());
-        valueInput.addEventListener('keydown', e => e.stopPropagation());
-    });
-}
-
-/**
- * HTML 转义
- */
-function escapeHtml(text) {
-    if (!text) return '';
-    return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
 
 /**
  * 绑定编辑器事件
@@ -471,22 +429,27 @@ async function handleToolAction(action) {
                         const titleInput = editorInstance.shadow.querySelector('.vn-note-title');
                         if (titleInput) titleInput.value = currentNoteTitle;
 
-                        editorInstance.liveEditor.innerHTML = markdownToHtml(content);
+                        // 解析 frontmatter 和正文
+                        const { properties, body } = parseFrontmatter(content);
+
+                        // 填充属性区
+                        editorInstance.properties = properties;
+                        renderPropertiesList(editorInstance);
+
+                        // 只填充正文到编辑器
+                        editorInstance.liveEditor.innerHTML = markdownToHtml(body);
                         console.log('[Videoo Notee] 已打开笔记:', note.name);
 
                         // 异步解析图片并替换为 Blob URL
-                        // 1. 查找所有图片（包括截图块中的和普通的 img 标签）
                         const images = editorInstance.liveEditor.querySelectorAll('img');
                         for (const img of images) {
                             const src = img.getAttribute('data-saved-path') || img.getAttribute('src');
-                            // 检查是否是本地路径（不包含 http/https/blob）
                             if (src && !src.match(/^(http|https|blob|data):/)) {
                                 try {
                                     const blob = await readResource(src);
                                     if (blob) {
                                         const url = URL.createObjectURL(blob);
                                         img.src = url;
-                                        // 保持 data-saved-path 不变，以便后续保存时还原
                                         if (!img.getAttribute('data-saved-path')) {
                                             img.setAttribute('data-saved-path', src);
                                         }
@@ -665,11 +628,17 @@ async function saveNoteToFile() {
     if (!editorInstance) return;
 
     try {
-        // 转换编辑器内容为 Markdown
-        const markdown = htmlToMarkdown(editorInstance.liveEditor);
+        // 生成属性区 Frontmatter
+        const frontmatter = propertiesToFrontmatter(editorInstance.properties || []);
+
+        // 转换编辑器内容为 Markdown（正文部分）
+        const bodyMarkdown = htmlToMarkdown(editorInstance.liveEditor.innerHTML);
+
+        // 完整内容 = Frontmatter + 正文
+        const fullContent = frontmatter + bodyMarkdown;
 
         // 保存到本地文件
-        await saveNoteToLocal(currentNoteTitle, markdown);
+        await saveNoteToLocal(currentNoteTitle, fullContent);
 
         // 更新保存状态显示
         updateSaveStatus('已保存');
@@ -764,164 +733,9 @@ function updateSaveStatus(status) {
     }
 }
 
-/**
- * HTML 转 Markdown
- */
-function htmlToMarkdown(element) {
-    let markdown = '';
 
-    function processNode(node) {
-        if (node.nodeType === Node.TEXT_NODE) {
-            return node.textContent;
-        }
 
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-            return '';
-        }
 
-        const tag = node.tagName.toLowerCase();
-        let content = '';
-
-        // 递归处理子节点
-        for (const child of node.childNodes) {
-            content += processNode(child);
-        }
-
-        switch (tag) {
-            case 'div':
-                if (node.classList.contains('vn-screenshot-block')) {
-                    // 截图块：转换为 Markdown 图片格式
-                    const img = node.querySelector('img');
-                    const link = node.querySelector('.vn-timestamp-link');
-                    const savedPath = img?.dataset.savedPath || img?.src || '';
-                    const timestamp = link?.textContent || '';
-                    const href = link?.href || '';
-
-                    let result = `![截图 ${timestamp}](${savedPath})\n`;
-                    if (href) {
-                        result += `[${timestamp}](${href})\n`;
-                    }
-                    return result + '\n';
-                }
-                return content + '\n';
-
-            case 'p':
-                return content + '\n\n';
-
-            case 'br':
-                return '\n';
-
-            case 'strong':
-            case 'b':
-                return `**${content}**`;
-
-            case 'em':
-            case 'i':
-                return `*${content}*`;
-
-            case 'a':
-                const href = node.getAttribute('href');
-                return `[${content}](${href})`;
-
-            case 'img':
-                const src = node.dataset.savedPath || node.src;
-                const alt = node.alt || '图片';
-                return `![${alt}](${src})`;
-
-            case 'h1':
-                return `# ${content}\n\n`;
-            case 'h2':
-                return `## ${content}\n\n`;
-            case 'h3':
-                return `### ${content}\n\n`;
-
-            case 'ul':
-                return content + '\n';
-            case 'ol':
-                return content + '\n';
-            case 'li':
-                return `- ${content}\n`;
-
-            case 'code':
-                return `\`${content}\``;
-
-            case 'pre':
-                return `\`\`\`\n${content}\n\`\`\`\n`;
-
-            default:
-                return content;
-        }
-    }
-
-    markdown = processNode(element);
-
-    // 规范化字符：
-    // 1. 全角 ＃ -> 半角 #
-    // 2. 全角空格 -> 半角空格
-    // 3. 不换行空格 (\u00A0 / &nbsp;) -> 普通空格 (修复 contenteditable 导致的 Markdown 标题失效问题)
-    markdown = markdown
-        .replace(/＃/g, '#')
-        .replace(/　/g, ' ')
-        .replace(/\u00A0/g, ' ');
-
-    // 清理多余的空行
-    return markdown
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-}
-
-/**
- * Markdown 转 HTML (用于加载笔记)
- */
-function markdownToHtml(markdown) {
-    if (!markdown) return '';
-
-    let html = markdown;
-
-    // 保护代码块
-    const codeBlocks = [];
-    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
-        codeBlocks.push(code);
-        return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
-    });
-
-    // 恢复截图块 HTML
-    const screenshotRegex = /!\[(.*?)\]\((.*?)\)\s*(?:\[(.*?)\]\((.*?)\))?/g;
-    html = html.replace(screenshotRegex, (match, alt, src, timeText, timeHref) => {
-        const isScreenshot = alt.includes('截图') || src.includes('assets/');
-        if (isScreenshot) {
-            let linkHtml = '';
-            if (timeText && timeHref) {
-                linkHtml = `<a href="${timeHref}" class="vn-timestamp-link">${timeText}</a>`;
-            }
-            return `<div class="vn-screenshot-block" data-path="${src}"><img src="${src}" alt="${alt}" class="vn-screenshot-img" data-saved-path="${src}">${linkHtml}</div>`;
-        }
-        return `<img src="${src}" alt="${alt}">`;
-    });
-
-    // 普通链接
-    html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
-
-    // 标题
-    html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
-    html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
-    html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
-
-    // 样式
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    html = html.replace(/^\- (.*$)/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/g, '<ul>$1</ul>');
-
-    // 换行
-    html = html.replace(/\n\n/g, '<br><br>');
-    html = html.replace(/\n/g, '<br>');
-
-    // 恢复代码块
-    html = html.replace(/__CODE_BLOCK_(\d+)__/g, (m, i) => `<pre><code>${codeBlocks[i]}</code></pre>`);
-
-    return html;
-}
 
 /**
  * 处理笔记标题变化

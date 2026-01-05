@@ -454,6 +454,56 @@ function showToast(message, duration = 2000) {
     }, duration);
 }
 
+/**
+ * 设置全局消息监听器（处理全屏模式等组件的请求）
+ */
+function setupGlobalListeners() {
+    window.addEventListener('message', async (event) => {
+        if (event.source !== window) return;
+        const { type } = event.data || {};
+
+        if (type === 'VN_REQUEST_SCREENSHOT') {
+            const video = currentAdapter?.getVideoElement();
+            if (video) {
+                try {
+                    const result = await captureVideoFrame(video);
+                    const videoInfo = currentAdapter.getVideoInfo();
+
+                    // 发送结果回全屏模式
+                    window.postMessage({
+                        type: 'VN_SCREENSHOT_RESULT',
+                        data: {
+                            dataUrl: result.dataUrl,
+                            timestamp: result.timestamp,
+                            videoUrl: videoInfo.url
+                        }
+                    }, '*');
+                } catch (e) {
+                    console.error('截图失败:', e);
+                }
+            }
+        }
+
+        if (type === 'VN_REQUEST_TIMESTAMP') {
+            const video = currentAdapter?.getVideoElement();
+            if (video) {
+                const timestamp = video.currentTime;
+                const videoInfo = currentAdapter.getVideoInfo();
+
+                // 发送结果回全屏模式
+                window.postMessage({
+                    type: 'VN_TIMESTAMP_RESULT',
+                    data: {
+                        timestamp: timestamp,
+                        videoUrl: videoInfo.url
+                    }
+                }, '*');
+            }
+        }
+    });
+}
+
 // 启动
+setupGlobalListeners();
 init();
 
