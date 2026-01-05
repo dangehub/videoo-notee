@@ -101,6 +101,9 @@ async function handleMessage(message, sender) {
         case 'GET_SCREENSHOTS':
             return getScreenshots(message.data);
 
+        case 'VN_FETCH_URL':
+            return fetchUrl(message.data);
+
         default:
             throw new Error(`未知消息类型: ${message.type}`);
     }
@@ -396,6 +399,28 @@ async function getScreenshots(filter = {}) {
 async function getCurrentVideo() {
     const result = await browser.storage.get('currentVideo');
     return result.currentVideo || null;
+}
+
+/**
+ * 代理获取 URL 内容 (用于绕过 CSP/CORS)
+ */
+async function fetchUrl(options) {
+    const { url } = options;
+    if (!url) throw new Error('URL is required');
+
+    console.log('[Videoo Notee] Background fetching:', url);
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+        }
+        // 目前只处理 JSON，后续可根据 content-type 扩展
+        const data = await response.json();
+        return { success: true, data };
+    } catch (error) {
+        console.error('[Videoo Notee] Background fetch error:', error);
+        return { success: false, error: error.message };
+    }
 }
 
 console.log('[Videoo Notee] Service Worker 已启动');

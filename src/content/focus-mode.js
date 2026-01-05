@@ -21,6 +21,7 @@ import {
     setupAutoSave,
     generateNoteTitle
 } from './editor-core.js';
+import { getBilibiliVideoInfo, fetchSubtitleList, fetchSubtitleContent } from './subtitle-manager.js';
 
 // Focus Mode 状态
 let focusModeActive = false;
@@ -28,6 +29,9 @@ let focusContainer = null;
 let originalPlayerInfo = null;
 let embeddedEditor = null;
 let currentNoteTitle = generateNoteTitle(); // 初始化时生成默认标题
+let videoElement = null; // 当前视频元素引用
+let subtitleData = [];   // 当前字幕数据
+let currentSubtitleIndex = -1; // 当前高亮的字幕索引
 
 let resizeHandlerMove = null;
 let resizeHandlerUp = null;
@@ -195,6 +199,14 @@ export function exitFocusMode() {
     // 移除 resize 监听器
     if (resizeHandlerMove) window.removeEventListener('mousemove', resizeHandlerMove);
     if (resizeHandlerUp) window.removeEventListener('mouseup', resizeHandlerUp);
+
+    // 移除字幕相关的监听
+    if (videoElement) {
+        videoElement.removeEventListener('timeupdate', handleTimeUpdate);
+        videoElement = null;
+    }
+    subtitleData = [];
+    currentSubtitleIndex = -1;
 }
 
 /**
@@ -313,13 +325,36 @@ async function createEmbeddedEditor(container) {
                 <input type="text" class="vn-embedded-title" value="${currentNoteTitle}" placeholder="笔记标题">
                 <span class="vn-embedded-save-status">📁 ${getDirectoryName() || '未选择'}</span>
             </div>
-            <div class="vn-embedded-toolbar">
-                <button class="vn-embedded-tool" data-action="screenshot" title="截图">📸</button>
-                <button class="vn-embedded-tool" data-action="timestamp" title="时间戳">⏱️</button>
-                <button class="vn-embedded-tool" data-action="open" title="打开笔记">📜</button>
-                <button class="vn-embedded-tool" data-action="save" title="保存">💾</button>
+
+            <!-- Tabs -->
+            <div class="vn-embedded-tabs">
+                <button class="vn-tab-btn active" data-tab="note">📝 笔记</button>
+                <button class="vn-tab-btn" data-tab="subtitle">💬 字幕 (Beta)</button>
             </div>
-            <div class="vn-embedded-core-container"></div>
+
+            <!-- Tab Content: Note -->
+            <div class="vn-tab-content active" id="vn-tab-note">
+                <div class="vn-embedded-toolbar">
+                    <button class="vn-embedded-tool" data-action="screenshot" title="截图">📸</button>
+                    <button class="vn-embedded-tool" data-action="timestamp" title="时间戳">⏱️</button>
+                    <button class="vn-embedded-tool" data-action="open" title="打开笔记">📜</button>
+                    <button class="vn-embedded-tool" data-action="save" title="保存">💾</button>
+                </div>
+                <div class="vn-embedded-core-container"></div>
+            </div>
+
+            <!-- Tab Content: Subtitle -->
+            <div class="vn-tab-content" id="vn-tab-subtitle">
+                <div class="vn-subtitle-controls">
+                    <select class="vn-subtitle-lang-select" disabled>
+                        <option>加载中...</option>
+                    </select>
+                    <button class="vn-subtitle-refresh" title="刷新字幕">🔄</button>
+                </div>
+                <div class="vn-subtitle-list">
+                    <div class="vn-subtitle-empty">请点击刷新获取字幕 / 暂无字幕</div>
+                </div>
+            </div>
         </div>
     `;
 
@@ -364,10 +399,196 @@ async function createEmbeddedEditor(container) {
     editorArea.addEventListener('keypress', stopPropagation);
     editorArea.addEventListener('keyup', stopPropagation);
 
-    // 标题输入框特定处理
-    titleInput.addEventListener('keydown', stopPropagation);
     titleInput.addEventListener('keypress', stopPropagation);
     titleInput.addEventListener('keyup', stopPropagation);
+
+    // --- Tab 切换逻辑 ---
+    const tabBtns = container.querySelectorAll('.vn-tab-btn');
+    const tabContents = container.querySelectorAll('.vn-tab-content');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // 切换按钮状态
+            tabBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // 切换内容显示
+            const targetId = `vn-tab-${btn.dataset.tab}`;
+            tabContents.forEach(c => {
+                if (c.id === targetId) {
+                    c.classList.add('active');
+                    // 如果切换到字幕 Tab 且无数据，自动加载
+                    if (btn.dataset.tab === 'subtitle' && subtitleData.length === 0) {
+                        tryLoadSubtitles(container);
+                    }
+                } else {
+                    c.classList.remove('active');
+                }
+            });
+        });
+    });
+
+    // --- 字幕刷新按钮 ---
+    const refreshBtn = container.querySelector('.vn-subtitle-refresh');
+    refreshBtn.addEventListener('click', () => tryLoadSubtitles(container));
+
+    // --- 尝试获取视频元素 ---
+    // (enterFocusMode 已经 append 了 player，这里尝试从里面找 video)
+    const playerContainer = document.querySelector('.vn-focus-video-area');
+    if (playerContainer) {
+        videoElement = playerContainer.querySelector('video');
+        if (videoElement) {
+            videoElement.addEventListener('timeupdate', handleTimeUpdate);
+            console.log('[Focus Mode] Video element bound for subtitles');
+        }
+    }
+}
+
+/**
+ * 尝试加载字幕
+ */
+async function tryLoadSubtitles(container) {
+    const listContainer = container.querySelector('.vn-subtitle-list');
+    const langSelect = container.querySelector('.vn-subtitle-lang-select');
+
+    listContainer.innerHTML = '<div class="vn-subtitle-loading">正在获取字幕列表...</div>';
+    langSelect.innerHTML = '<option>加载中...</option>';
+    langSelect.disabled = true;
+
+    try {
+        // 1. 获取视频信息
+        const info = await getBilibiliVideoInfo();
+        if (!info) {
+            throw new Error('无法获取视频信息 (非 Bilibili 视频?)');
+        }
+
+        // 2. 获取字幕列表
+        const list = await fetchSubtitleList(info);
+        if (list.length === 0) {
+            listContainer.innerHTML = '<div class="vn-subtitle-empty">当前视频无可用字幕</div>';
+            langSelect.innerHTML = '<option>无字幕</option>';
+            return;
+        }
+
+        // 3. 填充语言选择
+        langSelect.innerHTML = list.map((sub, idx) =>
+            `<option value="${sub.url}" ${idx === 0 ? 'selected' : ''}>${sub.label || sub.lang}</option>`
+        ).join('');
+        langSelect.disabled = false;
+
+        // 绑定语言切换事件
+        // 移除旧监听器避免重复? createEmbeddedEditor 只调一次，没问题。
+        // 但 tryLoadSubtitles 可能被多次调用，这里简单处理：重新替换 element 或 listener
+        // 简单起见，假设用户变更选项会触发 change
+        langSelect.onchange = async () => {
+            await loadSubtitleContent(langSelect.value, listContainer);
+        };
+
+        // 4. 加载默认选中的字幕内容
+        if (list[0]?.url) {
+            await loadSubtitleContent(list[0].url, listContainer);
+        }
+
+    } catch (e) {
+        console.error(e);
+        listContainer.innerHTML = `<div class="vn-subtitle-error">加载失败: ${e.message}</div>`;
+        langSelect.innerHTML = '<option>错误</option>';
+    }
+}
+
+/**
+ * 加载并渲染具体字幕内容
+ */
+async function loadSubtitleContent(url, container) {
+    container.innerHTML = '<div class="vn-subtitle-loading">正在下载字幕内容...</div>';
+    try {
+        const content = await fetchSubtitleContent(url);
+        subtitleData = content;
+        renderSubtitleList(container);
+    } catch (e) {
+        container.innerHTML = `<div class="vn-subtitle-error">内容下载失败: ${e.message}</div>`;
+    }
+}
+
+/**
+ * 渲染字幕列表 DOM
+ */
+function renderSubtitleList(container) {
+    if (subtitleData.length === 0) {
+        container.innerHTML = '<div class="vn-subtitle-empty">字幕内容为空</div>';
+        return;
+    }
+
+    container.innerHTML = subtitleData.map((item, index) => `
+        <div class="vn-subtitle-item" data-index="${index}" data-start="${item.start}">
+            <span class="vn-sub-time">${formatTime(item.start)}</span>
+            <span class="vn-sub-text">${escapeHtml(item.text)}</span>
+        </div>
+    `).join('');
+
+    // 绑定点击跳转
+    container.querySelectorAll('.vn-subtitle-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const start = parseFloat(item.dataset.start);
+            if (videoElement) {
+                videoElement.currentTime = start;
+                videoElement.play();
+            }
+        });
+    });
+}
+
+/**
+ * 格式化时间 (简易版)
+ */
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * 简单的 HTML 转义
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+/**
+ * 视频播放进度更新处理 (高亮字幕)
+ */
+function handleTimeUpdate() {
+    if (!videoElement || subtitleData.length === 0) return;
+
+    const currentTime = videoElement.currentTime;
+
+    // 查找当前应该高亮的字幕
+    // 简单遍历，由于是顺序的，可以优化，但 1000条以内遍历通常也很快
+    const activeIndex = subtitleData.findIndex(item =>
+        currentTime >= item.start && currentTime < item.end
+    );
+
+    if (activeIndex !== -1 && activeIndex !== currentSubtitleIndex) {
+        // 更新高亮样式
+        const container = document.querySelector('.vn-subtitle-list');
+        if (!container) return; // 可能是 Tab 没显示
+
+        const prev = container.querySelector(`.vn-subtitle-item[data-index="${currentSubtitleIndex}"]`);
+        if (prev) prev.classList.remove('active');
+
+        const curr = container.querySelector(`.vn-subtitle-item[data-index="${activeIndex}"]`);
+        if (curr) {
+            curr.classList.add('active');
+            // 自动滚动到可视区域
+            curr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        currentSubtitleIndex = activeIndex;
+    }
 }
 
 /**
@@ -665,6 +886,113 @@ function getEmbeddedEditorStyles() {
             flex-direction: column;
             min-height: 0;
             overflow: hidden;
+        }
+
+        /* Tabs Styles */
+        .vn-embedded-tabs {
+            display: flex;
+            background: #181825;
+            border-bottom: 1px solid #313244;
+        }
+        .vn-tab-btn {
+            flex: 1;
+            padding: 8px;
+            background: transparent;
+            border: none;
+            color: #a6adc8;
+            cursor: pointer;
+            font-size: 13px;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .vn-tab-btn:hover {
+            color: #cdd6f4;
+            background: #1e1e2e;
+        }
+        .vn-tab-btn.active {
+            color: #89b4fa;
+            border-bottom-color: #89b4fa;
+            background: #1e1e2e;
+            font-weight: 600;
+        }
+        .vn-tab-content {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            min-height: 0; /* 关键：允许 flex item 滚动 */
+            overflow: hidden;
+        }
+        .vn-tab-content.active {
+            display: flex;
+        }
+
+        /* Subtitle Styles */
+        .vn-subtitle-controls {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+            background: #181825;
+            border-bottom: 1px solid #313244;
+        }
+        .vn-subtitle-lang-select {
+            flex: 1;
+            background: #313244;
+            color: #cdd6f4;
+            border: 1px solid #45475a;
+            border-radius: 4px;
+            padding: 4px;
+            outline: none;
+        }
+        .vn-subtitle-refresh {
+            background: #313244;
+            border: 1px solid #45475a;
+            color: #cdd6f4;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        .vn-subtitle-refresh:hover {
+            background: #45475a;
+        }
+        .vn-subtitle-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+            background: #1e1e2e;
+        }
+        .vn-subtitle-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            display: flex;
+            gap: 10px;
+            border-left: 3px solid transparent;
+        }
+        .vn-subtitle-item:hover {
+            background: #313244;
+        }
+        .vn-subtitle-item.active {
+            background: #313244;
+            border-left-color: #89b4fa;
+        }
+        .vn-sub-time {
+            color: #89b4fa;
+            font-family: monospace;
+            font-size: 12px;
+            min-width: 40px;
+            flex-shrink: 0;
+        }
+        .vn-sub-text {
+            color: #cdd6f4;
+            font-size: 13px;
+        }
+        .vn-subtitle-loading, .vn-subtitle-error, .vn-subtitle-empty {
+            padding: 20px;
+            text-align: center;
+            color: #a6adc8;
+            font-size: 13px;
+        }
+        .vn-subtitle-error {
+            color: #f38ba8;
         }
     `;
 }

@@ -19,7 +19,8 @@
         "https://www.youtube.com/*",
         "https://youtube.com/*",
         "https://www.bilibili.com/*",
-        "https://bilibili.com/*"
+        "https://bilibili.com/*",
+        "https://*.hdslb.com/*"
     ],
     "background": {
         "service_worker": "background/index.js",
