@@ -619,6 +619,32 @@ function getFocusModeStyles() {
             width: 100% !important;
             height: 100% !important;
             position: relative !important;
+            top: 0 !important;
+            left: 0 !important;
+        }
+
+        .vn-focus-video-area .html5-video-container,
+        .vn-focus-video-area .html5-main-video {
+            width: 100% !important;
+            height: 100% !important;
+            position: relative !important;
+            top: 0 !important;
+            left: 0 !important;
+        }
+
+        .vn-focus-video-area ytd-player,
+        .vn-focus-video-area #player-container-outer,
+        .vn-focus-video-area #player-container-inner,
+        .vn-focus-video-area #player-container {
+            width: 100% !important;
+            height: 100% !important;
+            position: relative !important;
+        }
+
+        /* 确保 YouTube 字幕也正常显示 */
+        .vn-focus-video-area .ytp-caption-window-container {
+            position: absolute !important;
+            bottom: 10% !important;
         }
 
         .vn-focus-gutter {
