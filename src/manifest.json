@@ -13,8 +13,7 @@
         "activeTab",
         "storage",
         "downloads",
-        "scripting",
-        "sidePanel"
+        "scripting"
     ],
     "host_permissions": [
         "https://www.youtube.com/*",
@@ -33,9 +32,6 @@
             "48": "icons/icon48.svg"
         },
         "default_title": "Videoo Notee"
-    },
-    "side_panel": {
-        "default_path": "editor/index.html"
     },
     "content_scripts": [
         {
