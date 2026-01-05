@@ -284,20 +284,27 @@ function bindFocusModeEvents(container) {
     let isResizing = false;
     gutter.addEventListener('mousedown', (e) => {
         isResizing = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
         e.preventDefault();
+        e.stopPropagation();
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!isResizing) return;
-        const containerRect = container.getBoundingClientRect();
+        const containerRect = container.querySelector('.vn-focus-main').getBoundingClientRect();
         const percent = (e.clientX - containerRect.left) / containerRect.width * 100;
         const clampedPercent = Math.min(80, Math.max(20, percent));
-        videoArea.style.flex = `0 0 ${clampedPercent}%`;
-        editorArea.style.flex = `0 0 ${100 - clampedPercent - 1}%`;
+        videoArea.style.setProperty('flex', `0 0 ${clampedPercent}%`, 'important');
+        editorArea.style.setProperty('flex', `0 0 ${100 - clampedPercent - 2}%`, 'important');
     });
 
     document.addEventListener('mouseup', () => {
-        isResizing = false;
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
     });
 
     // ESC 键退出
