@@ -16,7 +16,7 @@ import {
 import { checkAndShowDirectoryDialog } from './directory-dialog.js';
 import { showFileListDialog } from './file-list-dialog.js';
 import { extractPropertiesAsArray, propertiesToFrontmatter } from '../utils/clipper-bridge.js';
-import { parseFrontmatter, markdownToHtml, htmlToMarkdown, renderPropertiesList } from './editor-core.js';
+import { parseFrontmatter, markdownToHtml, htmlToMarkdown, renderPropertiesList, initPropertiesSection } from './editor-core.js';
 
 // 编辑器状态
 let editorInstance = null;
@@ -158,8 +158,8 @@ export async function createFloatingEditor() {
         content: ''
     };
 
-    // 初始化属性区（从 Frontmatter 提取属性）
-    initPropertiesSection(shadow);
+    // 初始化属性区（从 Frontmatter 提取属性 + 折叠记忆）
+    initPropertiesSection(editorInstance);
 
     // 默认光标聚焦到正文区
     setTimeout(() => {
@@ -173,57 +173,7 @@ export async function createFloatingEditor() {
 /**
  * 初始化属性区（双栏键值编辑器）
  */
-async function initPropertiesSection(shadow) {
-    const propertiesSection = shadow.querySelector('.vn-properties-section');
-    const propertiesHeader = shadow.querySelector('.vn-properties-header');
-    const propertiesBody = shadow.querySelector('.vn-properties-body');
-    const propertiesList = shadow.querySelector('.vn-properties-list');
-    const addPropertyBtn = shadow.querySelector('.vn-add-property-btn');
 
-    // 从 storage 获取折叠状态
-    let isCollapsed = false;
-    try {
-        const stored = await chrome.storage.local.get('propertiesCollapsed');
-        isCollapsed = stored.propertiesCollapsed || false;
-    } catch (e) {
-        // 忽略存储错误
-    }
-
-    // 应用折叠状态
-    if (isCollapsed) {
-        propertiesSection.classList.add('collapsed');
-        propertiesHeader.querySelector('.vn-properties-toggle').textContent = '▶';
-    }
-
-    // 折叠/展开事件
-    propertiesHeader.addEventListener('click', async () => {
-        const toggle = propertiesHeader.querySelector('.vn-properties-toggle');
-        const collapsed = propertiesSection.classList.toggle('collapsed');
-        toggle.textContent = collapsed ? '▶' : '▼';
-
-        // 存储折叠状态
-        try {
-            await chrome.storage.local.set({ propertiesCollapsed: collapsed });
-        } catch (e) {
-            // 忽略存储错误
-        }
-    });
-
-    // 提取属性并渲染
-    editorInstance.properties = extractPropertiesAsArray();
-    renderPropertiesList(editorInstance);
-
-    // 添加属性按钮
-    addPropertyBtn.addEventListener('click', () => {
-        editorInstance.properties.push({ key: '', value: '' });
-        renderPropertiesList(editorInstance);
-        // 聚焦到新添加的键输入框
-        const inputs = propertiesList.querySelectorAll('.vn-property-key');
-        if (inputs.length > 0) {
-            inputs[inputs.length - 1].focus();
-        }
-    });
-}
 
 
 

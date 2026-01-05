@@ -73,48 +73,55 @@ export async function initEditorCore(instanceId, initialTitle) {
 /**
  * 初始化属性部分
  */
-async function initPropertiesSection(instance, title) {
-    const { propertiesSection, propertiesList } = instance;
-    const toggleBtn = propertiesSection.querySelector('.vn-properties-toggle');
+export async function initPropertiesSection(instance) {
+    const { propertiesSection } = instance;
     const header = propertiesSection.querySelector('.vn-properties-header');
-    const body = propertiesSection.querySelector('.vn-properties-body');
+    const toggle = propertiesSection.querySelector('.vn-properties-toggle');
     const addBtn = propertiesSection.querySelector('.vn-add-property-btn');
 
-    // 默认属性
-    const defaultProperties = {
-        title: title || document.title,
-        url: window.location.href.split('?')[0],
-        tags: 'video-note',
-        date: new Date().toLocaleDateString('zh-CN')
-    };
-
-    // 转换为数组格式
-    instance.properties = Object.entries(defaultProperties).map(([key, value]) => ({ key, value }));
-
-    // 初始渲染
+    // 1. 初始化默认属性 (如果未设置)
+    if (!instance.properties || instance.properties.length === 0) {
+        // TODO: 未来需支持在设置中自定义默认属性模板
+        instance.properties = extractPropertiesAsArray();
+    }
     renderPropertiesList(instance);
 
-    // 折叠功能
-    // 从本地存储读取折叠状态 (需要 instanceId 区分吗？也可以全局统一)
-    // 简单起见，这里先不读 storage，或者后续添加
-
-    function toggleProperties() {
-        instance.isPropertiesCollapsed = !instance.isPropertiesCollapsed;
-        if (instance.isPropertiesCollapsed) {
-            body.style.display = 'none';
-            toggleBtn.style.transform = 'rotate(-90deg)';
-        } else {
-            body.style.display = 'block';
-            toggleBtn.style.transform = 'rotate(0deg)';
-        }
+    // 2. 处理折叠状态 (从 Storage读取)
+    let isCollapsed = false;
+    try {
+        const stored = await chrome.storage.local.get('propertiesCollapsed');
+        isCollapsed = stored.propertiesCollapsed || false;
+    } catch (e) {
+        // 忽略错误
     }
 
-    header.addEventListener('click', toggleProperties);
+    if (isCollapsed) {
+        propertiesSection.classList.add('collapsed');
+        if (toggle) toggle.textContent = '▶';
+    }
 
-    // 添加属性
-    addBtn.addEventListener('click', () => {
+    // 绑定折叠事件
+    header.addEventListener('click', async () => {
+        const collapsed = propertiesSection.classList.toggle('collapsed');
+        if (toggle) toggle.textContent = collapsed ? '▶' : '▼';
+
+        try {
+            await chrome.storage.local.set({ propertiesCollapsed: collapsed });
+        } catch (e) { }
+    });
+
+    // 3. 添加属性按钮事件
+    addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         instance.properties.push({ key: '', value: '' });
         renderPropertiesList(instance);
+
+        // 聚焦到新输入框
+        const list = propertiesSection.querySelector('.vn-properties-list');
+        const inputs = list.querySelectorAll('.vn-property-key');
+        if (inputs.length > 0) {
+            inputs[inputs.length - 1].focus();
+        }
     });
 }
 
@@ -517,6 +524,10 @@ export function getEditorCoreStyles() {
         .vn-properties-section {
             background: #181825;
             border-bottom: 1px solid #313244;
+        }
+
+        .vn-properties-section.collapsed .vn-properties-body {
+            display: none !important;
         }
 
         .vn-properties-header {
