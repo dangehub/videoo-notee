@@ -45,7 +45,8 @@ function copyStatic() {
     const htmlFiles = [
         'popup/index.html',
         'editor/index.html',
-        'player/index.html'
+        'player/index.html',
+        'settings/index.html'
     ];
 
     for (const file of htmlFiles) {
@@ -62,7 +63,8 @@ function copyStatic() {
     const cssFiles = [
         'popup/popup.css',
         'editor/editor.css',
-        'player/player.css'
+        'player/player.css',
+        'settings/settings.css'
     ];
 
     for (const file of cssFiles) {
@@ -137,7 +139,8 @@ async function buildJS() {
         'content/index.js',
         'popup/popup.js',
         'editor/editor.js',
-        'player/player.js'
+        'player/player.js',
+        'settings/settings.js'
     ].map(f => path.join(srcDir, f));
 
     const buildOptions = {

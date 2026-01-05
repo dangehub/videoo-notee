@@ -415,6 +415,11 @@ async function handleScreenshotAndInsert() {
  */
 async function handleMessage(message, sender, sendResponse) {
     switch (message.type) {
+        case 'OPEN_FLOATING_EDITOR':
+            showEditor();
+            sendResponse({ success: true });
+            break;
+
         case 'CAPTURE_VIDEO_FRAME':
             const video = currentAdapter?.getVideoElement();
             if (video) {

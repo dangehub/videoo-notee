@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - Videoo Notee</title>
+    <link rel="stylesheet" href="settings.css">
+</head>
+
+<body>
+    <div class="settings-container">
+        <header class="settings-header">
+            <h1>⚙️ 设置</h1>
+            <p class="subtitle">Videoo Notee 配置</p>
+        </header>
+
+        <main class="settings-main">
+            <!-- AI 设置 -->
+            <section class="settings-section">
+                <h2>🤖 AI 设置</h2>
+                <div class="setting-item">
+                    <label for="ai-provider">AI 提供商</label>
+                    <select id="ai-provider">
+                        <option value="openai">OpenAI (GPT-4)</option>
+                        <option value="claude">Anthropic (Claude)</option>
+                        <option value="gemini">Google (Gemini)</option>
+                        <option value="custom">自定义 API</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label for="ai-api-key">API Key</label>
+                    <input type="password" id="ai-api-key" placeholder="输入您的 API Key">
+                </div>
+                <div class="setting-item">
+                    <label for="ai-base-url">API 基础 URL（可选）</label>
+                    <input type="text" id="ai-base-url" placeholder="https://api.openai.com/v1">
+                </div>
+            </section>
+
+            <!-- 存储设置 -->
+            <section class="settings-section">
+                <h2>📁 存储设置</h2>
+                <div class="setting-item">
+                    <label>当前保存目录</label>
+                    <div class="setting-value" id="current-directory">未选择</div>
+                    <button id="btn-change-directory" class="btn btn-secondary">更换目录</button>
+                </div>
+                <div class="setting-item">
+                    <label for="assets-folder">截图子目录名称</label>
+                    <input type="text" id="assets-folder" placeholder="assets">
+                </div>
+            </section>
+
+            <!-- 快捷键设置 -->
+            <section class="settings-section">
+                <h2>⌨️ 快捷键</h2>
+                <div class="setting-item readonly">
+                    <label>打开笔记</label>
+                    <kbd>Alt</kbd> + <kbd>N</kbd>
+                </div>
+                <div class="setting-item readonly">
+                    <label>截图</label>
+                    <kbd>Alt</kbd> + <kbd>S</kbd>
+                </div>
+                <div class="setting-item readonly">
+                    <label>视频模式</label>
+                    <kbd>Alt</kbd> + <kbd>F</kbd>
+                </div>
+            </section>
+
+            <!-- 关于 -->
+            <section class="settings-section">
+                <h2>ℹ️ 关于</h2>
+                <div class="about-info">
+                    <p>Videoo Notee v0.1.0</p>
+                    <p>视频笔记浏览器扩展</p>
+                    <p class="muted">支持 YouTube、Bilibili 等平台</p>
+                </div>
+            </section>
+        </main>
+
+        <footer class="settings-footer">
+            <button id="btn-save" class="btn btn-primary">保存设置</button>
+        </footer>
+    </div>
+
+    <script type="module" src="settings.js"></script>
+</body>
+
+</html>
