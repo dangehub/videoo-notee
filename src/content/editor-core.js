@@ -57,6 +57,13 @@ export function createEditorContent(instanceId = 'default') {
 }
 
 /**
+ * 获取编辑器实例
+ */
+export function getEditorInstance(instanceId) {
+    return editorInstances.get(instanceId);
+}
+
+/**
  * 初始化编辑器核心逻辑
  */
 export async function initEditorCore(instanceId, initialTitle) {
@@ -164,12 +171,7 @@ export function renderPropertiesList(instance) {
     });
 }
 
-/**
- * 获取编辑器实例
- */
-export function getEditorInstance(instanceId) {
-    return editorInstances.get(instanceId);
-}
+
 
 /**
  * 获取编辑器完整内容（包括 Frontmatter）
@@ -504,6 +506,35 @@ function insertHtmlAtCursor(editor, html) {
         range.setEndAfter(lastNode);
         selection.removeAllRanges();
         selection.addRange(range);
+    }
+}
+
+/**
+ * 配置自动保存
+ * @param {object} instance - 编辑器实例
+ * @param {function} saveCallback - 保存回调函数
+ * @param {number} delay - 延迟时间 (ms), 默认 1000
+ */
+export function setupAutoSave(instance, saveCallback, delay = 1000) {
+    let timeoutId = null;
+
+    const debouncedSave = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+            saveCallback();
+        }, delay);
+    };
+
+    // 监听正文输入
+    if (instance.liveEditor) {
+        instance.liveEditor.addEventListener('input', debouncedSave);
+        instance.liveEditor.addEventListener('compositionend', debouncedSave);
+    }
+
+    // 监听属性区输入
+    if (instance.propertiesSection) {
+        // 使用 capture 或让其冒泡
+        instance.propertiesSection.addEventListener('input', debouncedSave);
     }
 }
 

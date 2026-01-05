@@ -17,7 +17,8 @@ import {
     renderPropertiesList,
     loadEditorImages,
     insertScreenshot,
-    insertTimestamp
+    insertTimestamp,
+    setupAutoSave
 } from './editor-core.js';
 
 // Focus Mode 状态
@@ -334,9 +335,14 @@ async function createEmbeddedEditor(container) {
     // 初始化编辑器核心
     await initEditorCore('focus-mode', currentNoteTitle);
 
+    // 启用自动保存 (1秒延迟)
+    const instance = getEditorInstance('focus-mode');
+    setupAutoSave(instance, () => saveEmbeddedNote(true), 1000);
+
     // 获取编辑器元素
     const titleInput = container.querySelector('.vn-embedded-title');
-    embeddedEditor = { container, titleInput };
+    const saveStatus = container.querySelector('.vn-embedded-save-status');
+    embeddedEditor = { container, titleInput, saveStatus };
 
     // 绑定工具栏事件
     const toolbar = container.querySelector('.vn-embedded-toolbar');
@@ -438,11 +444,36 @@ async function handleVideooMessage(event) {
 
 /**
  * 保存内嵌编辑器笔记
+ * @param {boolean} silent 是否静默保存 (不弹错误Alert，仅更新UI状态)
  */
-async function saveEmbeddedNote() {
+async function saveEmbeddedNote(silent = false) {
     if (!embeddedEditor) return;
     const title = embeddedEditor.titleInput.value.trim() || currentNoteTitle;
-    await saveNote('focus-mode', title);
+
+    // 更新状态为 "保存中..."
+    if (embeddedEditor.saveStatus) embeddedEditor.saveStatus.textContent = '保存中...';
+
+    try {
+        await saveNote('focus-mode', title);
+        // 更新状态 "已保存"
+        if (embeddedEditor.saveStatus) {
+            embeddedEditor.saveStatus.textContent = '已保存';
+            embeddedEditor.saveStatus.style.color = '#a6adc8'; // 恢复默认色
+
+            // 2秒后清除文字，保持界面清爽，或者保留 "已保存"
+            setTimeout(() => {
+                if (embeddedEditor.saveStatus.textContent === '已保存') {
+                    embeddedEditor.saveStatus.textContent = '';
+                }
+            }, 2000);
+        }
+    } catch (e) {
+        if (!silent) console.error(e);
+        if (embeddedEditor.saveStatus) {
+            embeddedEditor.saveStatus.textContent = '保存失败';
+            embeddedEditor.saveStatus.style.color = '#f38ba8';
+        }
+    }
 }
 
 /**
