@@ -30,7 +30,7 @@ let currentNoteTitle = '';
 // 默认位置和大小
 const DEFAULT_CONFIG = {
     width: 420,
-    height: 500,
+    height: 800,
     right: 20,
     top: 80
 };
