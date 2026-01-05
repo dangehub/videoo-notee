@@ -216,13 +216,11 @@ function createFocusModeContainer() {
     container.className = 'vn-focus-mode-container';
     container.innerHTML = `
         <div class="vn-focus-controls">
-            <button class="vn-focus-btn vn-focus-close" title="退出视频模式">✕</button>
-            <div class="vn-focus-spacer"></div>
             <button class="vn-focus-btn vn-focus-speed-down" title="减速">🐢</button>
             <span class="vn-focus-speed-display">1.0x</span>
             <button class="vn-focus-btn vn-focus-speed-up" title="加速">⚡</button>
             <div class="vn-focus-spacer"></div>
-            <button class="vn-focus-btn vn-focus-screenshot" title="截图">📸</button>
+            <button class="vn-focus-btn vn-focus-close" title="退出全屏模式 (ESC)">✕</button>
         </div>
         <div class="vn-focus-main">
             <div class="vn-focus-video-area"></div>
@@ -250,7 +248,6 @@ function bindFocusModeEvents(container) {
     const speedDownBtn = container.querySelector('.vn-focus-speed-down');
     const speedUpBtn = container.querySelector('.vn-focus-speed-up');
     const speedDisplay = container.querySelector('.vn-focus-speed-display');
-    const screenshotBtn = container.querySelector('.vn-focus-screenshot');
     const gutter = container.querySelector('.vn-focus-gutter');
     const videoArea = container.querySelector('.vn-focus-video-area');
     const editorArea = container.querySelector('.vn-focus-editor-area');
@@ -273,11 +270,6 @@ function bindFocusModeEvents(container) {
             video.playbackRate = Math.min(4, video.playbackRate + 0.25);
             speedDisplay.textContent = video.playbackRate.toFixed(2) + 'x';
         }
-    });
-
-    // 截图
-    screenshotBtn.addEventListener('click', () => {
-        window.postMessage({ type: 'VN_CAPTURE_SCREENSHOT' }, '*');
     });
 
     // 拖拽调整分栏
