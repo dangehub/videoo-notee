@@ -372,10 +372,16 @@ function generateTimestampLink(videoUrl, timestamp) {
     return url.toString();
 }
 
-function generateNoteTitle() {
-    const videoTitle = document.title.replace(/[-_|].*/g, '').trim().slice(0, 30);
-    const date = new Date().toLocaleDateString('zh-CN').replace(/\//g, '-');
-    return `${videoTitle}_${date}`;
+/**
+ * 生成笔记标题 (统一格式)
+ * 使用网页原标题，去除文件系统非法字符
+ */
+export function generateNoteTitle() {
+    // 获取网页标题，去除非法字符
+    // Windows 文件名非法字符: \ / : * ? " < > |
+    let title = document.title || 'Untitled Note';
+    title = title.replace(/[\\/:*?"<>|]/g, '-');
+    return title.trim();
 }
 
 /**

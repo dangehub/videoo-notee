@@ -16,7 +16,7 @@ import {
 import { checkAndShowDirectoryDialog } from './directory-dialog.js';
 import { showFileListDialog } from './file-list-dialog.js';
 import { extractPropertiesAsArray, propertiesToFrontmatter } from '../utils/clipper-bridge.js';
-import { parseFrontmatter, markdownToHtml, htmlToMarkdown, renderPropertiesList, initPropertiesSection } from './editor-core.js';
+import { parseFrontmatter, markdownToHtml, htmlToMarkdown, renderPropertiesList, initPropertiesSection, setupAutoSave, generateNoteTitle } from './editor-core.js';
 
 // 编辑器状态
 let editorInstance = null;
@@ -25,7 +25,7 @@ let isDragging = false;
 let isResizing = false;
 let dragOffset = { x: 0, y: 0 };
 let resizeDirection = '';
-let currentNoteTitle = '';
+let currentNoteTitle = generateNoteTitle(); // 初始化标题
 
 // 默认位置和大小
 const DEFAULT_CONFIG = {
@@ -646,21 +646,7 @@ function formatTimestamp(seconds) {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-/**
- * 生成笔记标题
- */
-function generateNoteTitle() {
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const title = document.title || 'Untitled';
-    // 清理标题中的特殊字符
-    const cleanTitle = title
-        .replace(/[<>:"/\\|?*]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .substring(0, 100);
-    return `${dateStr} ${cleanTitle}`;
-}
+
 
 /**
  * 更新保存状态显示

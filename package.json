@@ -1,6 +1,6 @@
 {
   "name": "videoo-notee",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "视频笔记浏览器扩展 - 支持截图、时间戳、字幕提取和 AI 总结",
   "private": true,
   "scripts": {

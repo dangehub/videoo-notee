@@ -18,7 +18,8 @@ import {
     loadEditorImages,
     insertScreenshot,
     insertTimestamp,
-    setupAutoSave
+    setupAutoSave,
+    generateNoteTitle
 } from './editor-core.js';
 
 // Focus Mode 状态
@@ -26,7 +27,7 @@ let focusModeActive = false;
 let focusContainer = null;
 let originalPlayerInfo = null;
 let embeddedEditor = null;
-let currentNoteTitle = '';
+let currentNoteTitle = generateNoteTitle(); // 初始化时生成默认标题
 
 let resizeHandlerMove = null;
 let resizeHandlerUp = null;
