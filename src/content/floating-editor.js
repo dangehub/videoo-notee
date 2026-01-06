@@ -185,15 +185,22 @@ export async function createFloatingEditor() {
  * 绑定编辑器事件
  */
 function bindEditorEvents(shadow, wrapper) {
-    const header = shadow.querySelector('.vn-drag-handle');
+    const header = shadow.querySelector('.vn-editor-header');
     const closeBtn = shadow.querySelector('.vn-btn-close');
     const minimizeBtn = shadow.querySelector('.vn-btn-minimize');
     const focusBtn = shadow.querySelector('.vn-btn-focus');
     const resizeHandles = shadow.querySelectorAll('.vn-resize-handle');
     const toolBtns = shadow.querySelectorAll('.vn-tool-btn');
 
-    // 拖拽移动
+    // 拖拽移动 - 绑定到整个 header，但排除交互元素（输入框、按钮）
     header.addEventListener('mousedown', (e) => {
+        // 排除按钮和输入框
+        const target = e.target;
+        if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' ||
+            target.closest('button') || target.closest('input')) {
+            return; // 让这些元素正常工作，不启动拖拽
+        }
+
         isDragging = true;
         const rect = wrapper.getBoundingClientRect();
         dragOffset.x = e.clientX - rect.left;
